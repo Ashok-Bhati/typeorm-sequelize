@@ -1,18 +1,19 @@
-import { DataSource, EntityTarget, ObjectLiteral, QueryRunner } from 'typeorm';
-import { DbContextOptions } from '../types/options';
+import { DataSource, EntityManager, ObjectLiteral, QueryRunner } from 'typeorm';
 import { BaseRepository } from './repository';
+import { DbContextOptions, RepositoryRegistration } from '../types/options';
 import { EntityType } from '../types/entity';
 
 /**
- * DbContext class for managing database connections and entity sets
+ * DbContext class for managing database connections and repositories
  */
-export class DbContext {
-  private readonly dataSource: DataSource;
-  private queryRunner?: QueryRunner;
+export class DbContext<T extends RepositoryRegistration = {}> {
+  private dataSource!: DataSource;
+  private options: DbContextOptions<T>;
   private repositories: Map<string, BaseRepository<any>>;
+  private queryRunner?: QueryRunner;
 
-  constructor(options: DbContextOptions) {
-    this.dataSource = new DataSource(options);
+  constructor(options: DbContextOptions<T>) {
+    this.options = options;
     this.repositories = new Map();
   }
 
@@ -20,30 +21,52 @@ export class DbContext {
    * Initializes the database connection
    */
   async initialize(): Promise<void> {
+    this.dataSource = new DataSource({
+      type: this.options.type,
+      host: this.options.host,
+      port: this.options.port,
+      username: this.options.username,
+      password: this.options.password,
+      database: this.options.database,
+      entities: this.options.entities,
+      synchronize: this.options.synchronize
+    });
+
     await this.dataSource.initialize();
+
+    // Initialize registered repositories
+    if (this.options.repositories) {
+      for (const [key, entityType] of Object.entries(this.options.repositories)) {
+        this.repositories.set(key, BaseRepository.create(this.dataSource, entityType));
+      }
+    }
   }
 
   /**
-   * Gets a DbSet for the specified entity type
+   * Gets a repository for the specified entity type
    */
-  set<T extends ObjectLiteral>(entityType: EntityType<T>): BaseRepository<T> {
-    const entityName = entityType.name;
-    
-    if (!this.repositories.has(entityName)) {
-      const repository = this.dataSource.getRepository(entityType);
-      this.repositories.set(entityName, new BaseRepository(repository));
-    }
+  set<Entity extends ObjectLiteral>(entityType: EntityType<Entity>): BaseRepository<Entity> {
+    const repository = BaseRepository.create(this.dataSource, entityType);
+    return repository;
+  }
 
-    return this.repositories.get(entityName) as BaseRepository<T>;
+  /**
+   * Gets a registered repository by name
+   */
+  getRepository<K extends keyof T & string>(name: K): BaseRepository<InstanceType<T[K]>> {
+    const repository = this.repositories.get(name);
+    if (!repository) {
+      throw new Error(`Repository '${name}' not found. Make sure it is registered in DbContextOptions.`);
+    }
+    return repository as BaseRepository<InstanceType<T[K]>>;
   }
 
   /**
    * Begins a new transaction
    */
   async beginTransaction(): Promise<void> {
-    if (!this.queryRunner) {
-      this.queryRunner = this.dataSource.createQueryRunner();
-    }
+    this.queryRunner = this.dataSource.createQueryRunner();
+    await this.queryRunner.connect();
     await this.queryRunner.startTransaction();
   }
 
@@ -51,46 +74,35 @@ export class DbContext {
    * Commits the current transaction
    */
   async commitTransaction(): Promise<void> {
-    if (this.queryRunner) {
-      await this.queryRunner.commitTransaction();
-      await this.queryRunner.release();
-      this.queryRunner = undefined;
+    if (!this.queryRunner) {
+      throw new Error('No active transaction');
     }
+    await this.queryRunner.commitTransaction();
+    await this.queryRunner.release();
+    this.queryRunner = undefined;
   }
 
   /**
    * Rolls back the current transaction
    */
   async rollbackTransaction(): Promise<void> {
-    if (this.queryRunner) {
-      await this.queryRunner.rollbackTransaction();
-      await this.queryRunner.release();
-      this.queryRunner = undefined;
+    if (!this.queryRunner) {
+      throw new Error('No active transaction');
     }
+    await this.queryRunner.rollbackTransaction();
+    await this.queryRunner.release();
+    this.queryRunner = undefined;
   }
 
   /**
-   * Saves all changes made in this context to the database
+   * Saves all pending changes to the database
    */
   async saveChanges(): Promise<void> {
-    if (this.queryRunner) {
-      await this.queryRunner.manager.save(this.getModifiedEntities());
-    } else {
-      await this.dataSource.manager.save(this.getModifiedEntities());
-    }
+    // TODO: Implement change tracking and batch updates
   }
 
   /**
-   * Gets all modified entities tracked by this context
-   */
-  private getModifiedEntities(): ObjectLiteral[] {
-    const modifiedEntities: ObjectLiteral[] = [];
-    // TODO: Implement change tracking
-    return modifiedEntities;
-  }
-
-  /**
-   * Disposes the context and releases all resources
+   * Disposes the database connection
    */
   async dispose(): Promise<void> {
     if (this.queryRunner) {
@@ -100,4 +112,11 @@ export class DbContext {
       await this.dataSource.destroy();
     }
   }
-} 
+}
+
+// Add property accessor for registered repositories
+type RepositoryAccessor<T extends RepositoryRegistration> = {
+  [K in keyof T]: BaseRepository<InstanceType<T[K]>>;
+};
+
+export type DbContextWithRepositories<T extends RepositoryRegistration> = DbContext<T> & RepositoryAccessor<T>; 

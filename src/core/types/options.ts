@@ -1,9 +1,16 @@
 import { DataSourceOptions } from 'typeorm';
 
 /**
+ * Repository registration mapping
+ */
+export interface RepositoryRegistration {
+  [key: string]: any;
+}
+
+/**
  * Options for configuring the DbContext
  */
-export interface DbContextOptions {
+export interface DbContextOptions<T extends RepositoryRegistration = {}> {
   // TypeORM required options
   type: 'mysql' | 'postgres' | 'sqlite' | 'mssql';
   host?: string;
@@ -13,6 +20,9 @@ export interface DbContextOptions {
   database: string;
   entities: any[];
   synchronize?: boolean;
+
+  // Repository registration
+  repositories?: T;
 
   // Custom options
   enableLogging?: boolean;
