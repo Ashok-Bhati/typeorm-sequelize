@@ -2,6 +2,7 @@ import { DataSource, EntityManager, ObjectLiteral, QueryRunner } from 'typeorm';
 import { BaseRepository } from './repository';
 import { DbContextOptions, RepositoryRegistration } from '../types/options';
 import { EntityType } from '../types/entity';
+import { EntityRegistry } from '../decorators';
 
 /**
  * DbContext class for managing database connections and repositories
@@ -21,6 +22,13 @@ export class DbContext<T extends RepositoryRegistration = {}> {
    * Initializes the database connection
    */
   async initialize(): Promise<void> {
+    // Add registered entities to options if not already included
+    const registeredEntities = EntityRegistry.getRegisteredEntities();
+    const entities = new Set([
+      ...(this.options.entities || []),
+      ...registeredEntities
+    ]);
+
     this.dataSource = new DataSource({
       type: this.options.type,
       host: this.options.host,
@@ -28,16 +36,29 @@ export class DbContext<T extends RepositoryRegistration = {}> {
       username: this.options.username,
       password: this.options.password,
       database: this.options.database,
-      entities: this.options.entities,
+      entities: Array.from(entities),
       synchronize: this.options.synchronize
     });
 
     await this.dataSource.initialize();
 
-    // Initialize registered repositories
+    // Initialize repositories for all entities
+    for (const entity of entities) {
+      const entityName = entity.name.charAt(0).toLowerCase() + entity.name.slice(1);
+      if (!this.repositories.has(entityName)) {
+        this.repositories.set(
+          entityName,
+          BaseRepository.create(this.dataSource, entity as EntityType<any>)
+        );
+      }
+    }
+
+    // Initialize explicitly registered repositories
     if (this.options.repositories) {
       for (const [key, entityType] of Object.entries(this.options.repositories)) {
-        this.repositories.set(key, BaseRepository.create(this.dataSource, entityType));
+        if (!this.repositories.has(key)) {
+          this.repositories.set(key, BaseRepository.create(this.dataSource, entityType));
+        }
       }
     }
   }
@@ -46,8 +67,16 @@ export class DbContext<T extends RepositoryRegistration = {}> {
    * Gets a repository for the specified entity type
    */
   set<Entity extends ObjectLiteral>(entityType: EntityType<Entity>): BaseRepository<Entity> {
-    const repository = BaseRepository.create(this.dataSource, entityType);
-    return repository;
+    const entityName = entityType.name.charAt(0).toLowerCase() + entityType.name.slice(1);
+    
+    if (!this.repositories.has(entityName)) {
+      this.repositories.set(
+        entityName,
+        BaseRepository.create(this.dataSource, entityType)
+      );
+    }
+
+    return this.repositories.get(entityName) as BaseRepository<Entity>;
   }
 
   /**
