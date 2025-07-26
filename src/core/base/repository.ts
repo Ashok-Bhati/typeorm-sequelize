@@ -1,34 +1,99 @@
 import jsep from 'jsep';
-import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
-import { DataSource } from 'typeorm';
+import { DeepPartial, ObjectLiteral, Repository, SelectQueryBuilder, SaveOptions, RemoveOptions } from 'typeorm';
 
 import { FieldComparison, PredicateJSON } from '../types/where';
 import { EntityType } from '../types/entity';
 import { QueryBuilderOptions } from '../types/options';
 import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
+import { DbContext } from './context';
 
 /**
  * Base repository class implementing IQueryable interface
  */
-export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T> {
+export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T> {
   protected readonly repository: Repository<T>;
   protected queryBuilder: SelectQueryBuilder<T>;
   protected options: QueryBuilderOptions;
+  protected readonly context: DbContext;
 
-  constructor(repository: Repository<T>) {
-    this.repository = repository;
-    this.queryBuilder = repository.createQueryBuilder();
+  constructor(context: DbContext, entity: EntityType<T>) {
+    this.context = context;
+    this.repository = context.getRepository(entity);
+    this.queryBuilder = this.repository.createQueryBuilder();
     this.options = {};
   }
 
   /**
    * Gets the underlying TypeORM repository for direct operations
    */
-  getRepository(): Repository<T> {
+  protected getTypeORMRepository(): Repository<T> {
     return this.repository;
   }
 
-  // Basic Query Methods
+  /**
+   * Creates a new query builder instance
+   */
+  protected createQueryBuilder(alias?: string): SelectQueryBuilder<T> {
+    return this.repository.createQueryBuilder(alias);
+  }
+
+  /**
+   * Executes a raw SQL query
+   */
+  protected async query(sql: string, parameters?: any[]): Promise<any> {
+    return this.repository.query(sql, parameters);
+  }
+
+  /**
+   * Creates a new instance of the entity
+   */
+  protected create(data: DeepPartial<T>): T {
+    return this.repository.create(data);
+  }
+
+  /**
+   * Saves one or more entities
+   */
+  async save(entity: DeepPartial<T>, options?: SaveOptions): Promise<T>;
+  async save(entities: DeepPartial<T>[], options?: SaveOptions): Promise<T[]>;
+  async save(entityOrEntities: DeepPartial<T> | DeepPartial<T>[], options?: SaveOptions): Promise<T | T[]> {
+    return this.repository.save(entityOrEntities as any, options);
+  }
+
+  /**
+   * Removes one or more entities
+   */
+  async remove(entity: T, options?: RemoveOptions): Promise<T>;
+  async remove(entities: T[], options?: RemoveOptions): Promise<T[]>;
+  async remove(entityOrEntities: T | T[], options?: RemoveOptions): Promise<T | T[]> {
+    if (Array.isArray(entityOrEntities)) {
+      return this.repository.remove(entityOrEntities, options);
+    }
+    return this.repository.remove(entityOrEntities, options);
+  }
+
+  /**
+   * Finds entities that match given conditions
+   */
+  protected async find(conditions?: any): Promise<T[]> {
+    return this.repository.find(conditions);
+  }
+
+  /**
+   * Finds first entity that matches given conditions
+   */
+  protected async findOne(conditions?: any): Promise<T | null> {
+    return this.repository.findOne(conditions);
+  }
+
+  /**
+   * Counts entities that match given conditions
+   */
+  protected async countBy(conditions?: any): Promise<number> {
+    return this.repository.count(conditions);
+  }
+
+  // Required IQueryable implementation
   async first(): Promise<T> {
     const result = await this.queryBuilder.limit(1).getOne();
     if (!result) {
@@ -60,6 +125,15 @@ export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements 
     return results[0] || null;
   }
 
+  async count(): Promise<number> {
+    return await this.queryBuilder.getCount();
+  }
+
+  async longCount(): Promise<number> {
+    return await this.count();
+  }
+
+  // IQueryable implementation
   private parseJsonPredicate<T>(
     predicate: PredicateJSON<T>,
     alias: string
@@ -151,7 +225,6 @@ export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements 
   }
 
   where(predicate: PredicateJSON<T>): IQueryable<T> {
-    // Extract the alias from the query builder
     const alias = this.queryBuilder.alias;
     const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
     console.log(`whereClause: ${whereClause}`);
@@ -178,14 +251,6 @@ export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements 
 
   async toArray(): Promise<T[]> {
     return await this.toList();
-  }
-
-  async count(): Promise<number> {
-    return await this.queryBuilder.getCount();
-  }
-
-  async longCount(): Promise<number> {
-    return await this.count();
   }
 
   async any(predicate?: (entity: T) => boolean): Promise<boolean> {
@@ -253,14 +318,7 @@ export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements 
     return this;
   }
 
-  /**
-   * Creates a new instance of the repository
-   */
-  static create<TEntity extends ObjectLiteral>(
-    dataSource: DataSource,
-    entityType: EntityType<TEntity>
-  ): BaseRepository<TEntity> {
-    const repository = dataSource.getRepository(entityType);
-    return new BaseRepository<TEntity>(repository);
+  async removeAll(): Promise<void> {
+    await this.repository.clear();
   }
 } 

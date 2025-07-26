@@ -1,6 +1,13 @@
 import { DbContextOptions } from '../../types/options';
 import { DbContext } from '../context';
 import { TestEntity } from './test-entity';
+import { BaseRepository } from '../repository';
+
+class TestRepository extends BaseRepository<TestEntity> {
+  constructor(context: DbContext) {
+    super(context, TestEntity);
+  }
+}
 
 describe('DbContext', () => {
   let context: DbContext;
@@ -32,8 +39,8 @@ describe('DbContext', () => {
       const testEntity = new TestEntity('Test Entity', 'Test Description');
 
       // Act
-      const repository = context.set(TestEntity);
-      await repository.getRepository().save(testEntity);
+      const repository = new TestRepository(context);
+      await repository.save(testEntity);
       const result = await repository.first();
 
       // Assert
@@ -44,7 +51,7 @@ describe('DbContext', () => {
 
     it('should update an entity', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
       const entity = await repository.first();
       entity.name = 'Updated Name';
 
@@ -58,11 +65,11 @@ describe('DbContext', () => {
 
     it('should delete an entity', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
       const entity = await repository.first();
 
       // Act
-      await repository.getRepository().remove(entity as TestEntity);
+      await repository.remove(entity);
       const result = await repository.firstOrDefault();
 
       // Assert
@@ -72,8 +79,8 @@ describe('DbContext', () => {
 
   describe('Query Methods', () => {
     beforeEach(async () => {
-      const repository = context.set(TestEntity);
-      await repository.getRepository().save([
+      const repository = new TestRepository(context);
+      await repository.save([
         new TestEntity('Entity 1', 'Description 1'),
         new TestEntity('Entity 2', 'Description 2'),
         new TestEntity('Entity 3', 'Description 3')
@@ -81,13 +88,13 @@ describe('DbContext', () => {
     });
 
     afterEach(async () => {
-      const repository = context.set(TestEntity);
-      await repository.getRepository().clear();
+      const repository = new TestRepository(context);
+      await repository.removeAll();
     });
 
     it('should filter entities using where', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
 
       // Act
       const results = await repository
@@ -101,7 +108,7 @@ describe('DbContext', () => {
 
     it('should order entities', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
 
       // Act
       const results = await repository
@@ -116,7 +123,7 @@ describe('DbContext', () => {
 
     it('should support paging', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
 
       // Act
       const results = await repository
@@ -134,12 +141,12 @@ describe('DbContext', () => {
   describe('Transactions', () => {
     it('should commit transaction successfully', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
       const entity = new TestEntity('Transaction Test');
 
       // Act
       await context.beginTransaction();
-      await repository.getRepository().save(entity);
+      await repository.save(entity);
       await context.commitTransaction();
 
       // Assert
@@ -151,12 +158,12 @@ describe('DbContext', () => {
 
     it('should rollback transaction on error', async () => {
       // Arrange
-      const repository = context.set(TestEntity);
+      const repository = new TestRepository(context);
       const entity = new TestEntity('Rollback Test');
 
       // Act
       await context.beginTransaction();
-      await repository.getRepository().save(entity);
+      await repository.save(entity);
       await context.rollbackTransaction();
 
       // Assert

@@ -4,9 +4,6 @@ import { Column } from '../../decorators';
 
 @Entity('test_entities')
 export class TestEntity extends BaseEntity {
-  @PrimaryGeneratedColumn()
-  id!: number;
-
   @Column()
   name!: string;
 

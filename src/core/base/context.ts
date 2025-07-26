@@ -1,4 +1,4 @@
-import { DataSource, EntityManager, ObjectLiteral, QueryRunner } from 'typeorm';
+import { DataSource, EntityManager, ObjectLiteral, QueryRunner, Repository } from 'typeorm';
 
 import { EntityRegistry } from '../decorators';
 import { EntityType } from '../types/entity';
@@ -11,12 +11,12 @@ import { BaseRepository } from './repository';
 export class DbContext {
   private dataSource!: DataSource;
   private options: DbContextOptions;
-  private repositories: Record<string, BaseRepository<any>>;
   private queryRunner?: QueryRunner;
+  private repositories: Map<string, BaseRepository<any>> = new Map();
 
   constructor(options: DbContextOptions) {
     this.options = options;
-    this.repositories = {};
+    this.initialize();
   }
 
   /**
@@ -42,38 +42,24 @@ export class DbContext {
     });
 
     await this.dataSource.initialize();
-
-    // Initialize repositories for all entities
-    for (const entity of entities) {
-      const entityName = entity.name.charAt(0).toLowerCase() + entity.name.slice(1);
-      if (!this.repositories[entityName]) {
-        this.repositories[entityName] = BaseRepository.create(this.dataSource, entity as EntityType<any>);
-      }
-    }
-  }
-
-  /**
-   * Gets a repository for the specified entity type
-   */
-  set<Entity extends ObjectLiteral>(entityType: EntityType<Entity>): BaseRepository<Entity> {
-    const entityName = entityType.name.charAt(0).toLowerCase() + entityType.name.slice(1);
-    
-    if (!this.repositories[entityName]) {
-      this.repositories[entityName] = BaseRepository.create(this.dataSource, entityType);
-    }
-
-    return this.repositories[entityName] as BaseRepository<Entity>;
   }
 
   /**
    * Gets a registered repository by name
    */
-  getRepository<Entity extends ObjectLiteral>(name: string): BaseRepository<Entity> {
-    const repository = this.repositories[name];
+  getRepository<Entity extends ObjectLiteral>(name: EntityType<Entity>): Repository<Entity> {
+    const repository = this.dataSource.getRepository(name);
     if (!repository) {
       throw new Error(`Repository '${name}' not found. Make sure the entity is registered.`);
     }
-    return repository as BaseRepository<Entity>;
+    return repository;
+  }
+
+  /**
+   * Gets the underlying DataSource
+   */
+  getDataSource(): DataSource {
+    return this.dataSource;
   }
 
   /**
