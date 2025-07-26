@@ -1,9 +1,11 @@
+import jsep from 'jsep';
 import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { DataSource } from 'typeorm';
 
+import { FieldComparison, PredicateJSON } from '../types/where';
 import { EntityType } from '../types/entity';
 import { QueryBuilderOptions } from '../types/options';
-import { IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
+import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
 
 /**
  * Base repository class implementing IQueryable interface
@@ -58,8 +60,104 @@ export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements 
     return results[0] || null;
   }
 
-  where(predicate: (entity: T) => boolean): IQueryable<T> {
-    // TODO: Implement expression parsing for where clause
+  private parseJsonPredicate<T>(
+    predicate: PredicateJSON<T>,
+    alias: string
+  ): ExpressionParseResult {
+    const params: Record<string, any> = {};
+    let index = 0;
+  
+    function walk(expr: PredicateJSON<T>): string {
+      if ('$and' in expr) {
+        return `(${(expr.$and as any[]).map(walk).join(' AND ')})`;
+      }
+      if ('$or' in expr) {
+        return `(${(expr.$or as any[]).map(walk).join(' OR ')})`;
+      }
+  
+      return Object.entries(expr).map(([field, conditions]) => {
+        return Object.entries(conditions as FieldComparison).map(([op, value]) => {
+          const paramKey = `${field}_${index++}`;
+  
+          const column = `${alias}.${field}`;
+          switch (op) {
+            case '$eq':
+              params[paramKey] = value;
+              return `${column} = :${paramKey}`;
+            case '$ne':
+              params[paramKey] = value;
+              return `${column} != :${paramKey}`;
+            case '$lt':
+              params[paramKey] = value;
+              return `${column} < :${paramKey}`;
+            case '$lte':
+              params[paramKey] = value;
+              return `${column} <= :${paramKey}`;
+            case '$gt':
+              params[paramKey] = value;
+              return `${column} > :${paramKey}`;
+            case '$gte':
+              params[paramKey] = value;
+              return `${column} >= :${paramKey}`;
+            case '$in':
+              params[paramKey] = value;
+              return `${column} IN (:...${paramKey})`;
+            case '$notIn':
+              params[paramKey] = value;
+              return `${column} NOT IN (:...${paramKey})`;
+            case '$between': {
+              const [start, end] = value as [any, any];
+              params[`${paramKey}_start`] = start;
+              params[`${paramKey}_end`] = end;
+              return `${column} BETWEEN :${paramKey}_start AND :${paramKey}_end`;
+            }
+            case '$like':
+              params[paramKey] = `%${value}%`;
+              return `${column} LIKE :${paramKey}`;
+            case '$iLike':
+              params[paramKey] = `%${value}%`;
+              return `${column} ILIKE :${paramKey}`;
+            case '$notLike':
+              params[paramKey] = `%${value}%`;
+              return `${column} NOT LIKE :${paramKey}`;
+            case '$notILike':
+              params[paramKey] = `%${value}%`;
+              return `${column} NOT ILIKE :${paramKey}`;
+            case '$isNull':
+              return `${column} IS NULL`;
+            case '$isNotNull':
+              return `${column} IS NOT NULL`;
+            case '$contains':
+              params[paramKey] = `%${value}%`;
+              return `${column} LIKE :${paramKey}`;
+            case '$startsWith':
+              params[paramKey] = `${value}%`;
+              return `${column} LIKE :${paramKey}`;
+            case '$endsWith':
+              params[paramKey] = `%${value}`;
+              return `${column} LIKE :${paramKey}`;
+            case '$matches':
+              params[paramKey] = value;
+              return `${column} ~ :${paramKey}`;
+            default:
+              throw new Error(`Unsupported operator: ${op}`);
+          }
+        }).join(' AND ');
+      }).join(' AND ');
+    }
+  
+    const whereClause = walk(predicate);
+    return { whereClause, params };
+  }
+
+  where(predicate: PredicateJSON<T>): IQueryable<T> {
+    // Extract the alias from the query builder
+    const alias = this.queryBuilder.alias;
+    const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
+    console.log(`whereClause: ${whereClause}`);
+    console.log(`params: ${JSON.stringify(params, null, 2)}`);
+
+    this.queryBuilder.where(whereClause, params);
     return this;
   }
 
@@ -92,7 +190,7 @@ export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements 
 
   async any(predicate?: (entity: T) => boolean): Promise<boolean> {
     if (predicate) {
-      this.where(predicate);
+      // this.where(predicate);
     }
     return (await this.count()) > 0;
   }

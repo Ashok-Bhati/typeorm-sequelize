@@ -2313,6 +2313,7 @@ __metadata:
     express: "npm:^5.1.0"
     husky: "npm:^9.1.7"
     jest: "npm:^30.0.4"
+    jsep: "npm:^1.4.0"
     lint-staged: "npm:^16.1.2"
     pg: "npm:^8.16.3"
     prettier: "npm:^3.6.2"
@@ -3932,6 +3933,13 @@ __metadata:
   version: 1.1.0
   resolution: "jsbn@npm:1.1.0"
   checksum: 10c0/4f907fb78d7b712e11dea8c165fe0921f81a657d3443dde75359ed52eb2b5d33ce6773d97985a089f09a65edd80b11cb75c767b57ba47391fee4c969f7215c96
+  languageName: node
+  linkType: hard
+
+"jsep@npm:^1.4.0":
+  version: 1.4.0
+  resolution: "jsep@npm:1.4.0"
+  checksum: 10c0/fe60adf47e050e22eadced42514a51a15a3cf0e2d147896584486acd8ee670fc16641101b9aeb81f4aaba382043d29744b7aac41171e8106515b14f27e0c7116
   languageName: node
   linkType: hard
 

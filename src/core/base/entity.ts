@@ -6,7 +6,7 @@ import { EntityState, IEntity, ITrackable } from '../types/entity';
 /**
  * Base class for all entities in the system
  */
-export abstract class BaseEntity extends TypeORMBaseEntity implements IEntity, ITrackable {
+export abstract class BaseEntity extends TypeORMBaseEntity implements ITrackable {
   private _state: EntityState = EntityState.Unchanged;
   private _originalValues: Map<string, any> = new Map();
   private _isModified: boolean = false;
@@ -23,9 +23,9 @@ export abstract class BaseEntity extends TypeORMBaseEntity implements IEntity, I
   /**
    * Gets the entity's metadata
    */
-  get entityMetadata(): EntityMetadata | undefined {
-    return (this.constructor as any).getRepository().metadata;
-  }
+  // get entityMetadata(): EntityMetadata | undefined {
+  //   return (this.constructor as any).getRepository().metadata;
+  // }
 
   /**
    * Checks if the entity has been modified

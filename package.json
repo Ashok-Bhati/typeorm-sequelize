@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "jsep": "^1.4.0",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.25"

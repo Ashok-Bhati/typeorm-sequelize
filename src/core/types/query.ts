@@ -1,5 +1,7 @@
 import { ObjectLiteral } from 'typeorm';
 
+import { PredicateJSON } from './where';
+
 /**
  * Represents a queryable collection of entities
  */
@@ -9,7 +11,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   firstOrDefault(): Promise<Partial<T> | null>;
   single(): Promise<Partial<T>>;
   singleOrDefault(): Promise<Partial<T> | null>;
-  where(predicate: (entity: T) => boolean): IQueryable<T>;
+  where(predicate: PredicateJSON<T>): IQueryable<T>;
   orderBy(keySelector: (entity: T) => any): IOrderedQueryable<T>;
   orderByDescending(keySelector: (entity: T) => any): IOrderedQueryable<T>;
 
@@ -74,3 +76,9 @@ export interface PagedResult<T> {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
 } 
+
+export interface ExpressionParseResult {
+  whereClause: string;
+  params: Record<string, any>;
+}
+

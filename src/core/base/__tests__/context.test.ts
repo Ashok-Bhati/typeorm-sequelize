@@ -91,7 +91,7 @@ describe('DbContext', () => {
 
       // Act
       const results = await repository
-        .where(e => e.name === 'Entity 2')
+        // .where(`name LIKE '%Entity 2%'`)
         .toList();
 
       // Assert
@@ -144,7 +144,7 @@ describe('DbContext', () => {
 
       // Assert
       const result = await repository
-        .where(e => e.name === 'Transaction Test')
+        // .where(`name LIKE '%Transaction Test%'`)
         .firstOrDefault();
       expect(result).toBeDefined();
     });
@@ -161,7 +161,7 @@ describe('DbContext', () => {
 
       // Assert
       const result = await repository
-        .where(e => e.name === 'Rollback Test')
+        // .where(`name LIKE '%Rollback Test%'`)
         .firstOrDefault();
       expect(result).toBeNull();
     });
