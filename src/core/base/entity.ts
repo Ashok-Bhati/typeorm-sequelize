@@ -1,5 +1,6 @@
-import { EntityMetadata, BaseEntity as TypeORMBaseEntity } from 'typeorm';
+import { CreateDateColumn, EntityMetadata, BaseEntity as TypeORMBaseEntity, UpdateDateColumn } from 'typeorm';
 
+import { PrimaryGeneratedColumn } from '../decorators';
 import { EntityState, IEntity, ITrackable } from '../types/entity';
 
 /**
@@ -9,6 +10,15 @@ export abstract class BaseEntity extends TypeORMBaseEntity implements IEntity, I
   private _state: EntityState = EntityState.Unchanged;
   private _originalValues: Map<string, any> = new Map();
   private _isModified: boolean = false;
+
+  @PrimaryGeneratedColumn({ type: 'integer' })
+  id!: number;
+
+  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  updatedAt!: Date;
 
   /**
    * Gets the entity's metadata

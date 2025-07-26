@@ -8,7 +8,7 @@ import { IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '
 /**
  * Base repository class implementing IQueryable interface
  */
-export class BaseRepository<T extends ObjectLiteral> implements IQueryable<T> {
+export class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T> {
   protected readonly repository: Repository<T>;
   protected queryBuilder: SelectQueryBuilder<T>;
   protected options: QueryBuilderOptions;

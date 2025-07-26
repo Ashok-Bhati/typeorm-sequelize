@@ -1,11 +1,21 @@
-import { DataSourceOptions } from 'typeorm';
+import { DataSourceOptions, ObjectLiteral } from 'typeorm';
+import { EntityType } from './entity';
 
 /**
  * Repository registration mapping
  */
 export interface RepositoryRegistration {
-  [key: string]: any;
+  [key: string]: EntityType<ObjectLiteral>;
 }
+
+/**
+ * Infers repository names from entity types
+ */
+export type InferredRepositories<T extends Record<string, EntityType<ObjectLiteral>>> = {
+  [K in keyof T as K extends string 
+    ? Uncapitalize<T[K] extends { name: string } ? T[K]['name'] : never>
+    : never]: T[K] extends EntityType<infer R> ? R : never;
+};
 
 /**
  * Options for configuring the DbContext
@@ -18,7 +28,7 @@ export interface DbContextOptions<T extends RepositoryRegistration = {}> {
   username?: string;
   password?: string;
   database: string;
-  entities: any[];
+  entities: EntityType<ObjectLiteral>[];
   synchronize?: boolean;
 
   // Repository registration

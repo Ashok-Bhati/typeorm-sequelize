@@ -1,34 +1,55 @@
+import { ObjectLiteral } from 'typeorm';
+
 import { NextFunction, Request, RequestHandler, Response } from 'express';
 
-import { DbContext, DbContextWithRepositories } from '../../core/base/context';
-import { DbContextOptions, RepositoryRegistration } from '../../core/types/options';
+import { DbContext } from '../../core/base/context';
+import { BaseRepository } from '../../core/base/repository';
+import { EntityType } from '../../core/types/entity';
+import { DbContextOptions } from '../../core/types/options';
 
+type DbContextMethods = Pick<DbContext, 'commitTransaction' | 'rollbackTransaction' | 'dispose' | 'beginTransaction'>;
+
+type DbContextWithRepositories<T extends Record<string, ObjectLiteral>> = DbContextMethods & {
+  repositories: { [K in keyof T]: BaseRepository<T[K]> };
+};
+
+export type TypedRequest<T extends Record<string, ObjectLiteral>> = Request & {
+  context?: DbContextWithRepositories<T>;
+};
+
+
+// Extend Express Request
 declare module 'express' {
-  interface Request {
-    context?: DbContextWithRepositories<any>;
+  export interface Request {
+    context?: DbContextWithRepositories<Record<string, ObjectLiteral>>;
   }
 }
 
 /**
  * Creates middleware that injects a DbContext into the request
  */
-export function withDbContext<T extends RepositoryRegistration>(options: DbContextOptions<T>): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction) => {
+export function withDbContext<T extends Record<string, ObjectLiteral>>(
+  options: DbContextOptions,
+  _entities: { [K in keyof T]: EntityType<T[K]> }
+): RequestHandler {
+  return async (req: Request, _res, next) => {
     try {
-      const context = new DbContext<T>(options);
+      const context = new DbContext(options);
       await context.initialize();
 
-      // Create proxy to handle repository access
-      const contextProxy = new Proxy(context, {
-        get(target: DbContext<T>, prop: string) {
-          if (prop in target) {
-            return (target as any)[prop];
-          }
-          return target.getRepository(prop as keyof T & string);
-        }
-      });
+      const repositories = {} as { [K in keyof T]: BaseRepository<EntityType<T[K]>> };
 
-      (req as any).context = contextProxy as DbContextWithRepositories<T>;
+      for (const [key, entity] of Object.entries(_entities)) {
+        repositories[key as keyof T] = context.set(entity) as BaseRepository<EntityType<T[keyof T]>>;
+      }
+
+      req.context = {
+        commitTransaction: context.commitTransaction.bind(context),
+        rollbackTransaction: context.rollbackTransaction.bind(context),
+        dispose: context.dispose.bind(context),
+        beginTransaction: context.beginTransaction.bind(context),
+        repositories
+      };
 
       next();
     } catch (error) {
@@ -40,7 +61,11 @@ export function withDbContext<T extends RepositoryRegistration>(options: DbConte
 /**
  * Middleware to handle transactions
  */
-export const withTransaction = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const withTransaction = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   const context = req.context;
   if (!context) {
     next(new Error('DbContext not found in request'));
@@ -78,4 +103,4 @@ export const withTransaction = async (req: Request, res: Response, next: NextFun
     await cleanup();
     next(error);
   }
-}; 
+};

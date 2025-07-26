@@ -1,21 +1,22 @@
 import { DataSource, EntityManager, ObjectLiteral, QueryRunner } from 'typeorm';
-import { BaseRepository } from './repository';
-import { DbContextOptions, RepositoryRegistration } from '../types/options';
-import { EntityType } from '../types/entity';
+
 import { EntityRegistry } from '../decorators';
+import { EntityType } from '../types/entity';
+import { DbContextOptions } from '../types/options';
+import { BaseRepository } from './repository';
 
 /**
  * DbContext class for managing database connections and repositories
  */
-export class DbContext<T extends RepositoryRegistration = {}> {
+export class DbContext {
   private dataSource!: DataSource;
-  private options: DbContextOptions<T>;
-  private repositories: Map<string, BaseRepository<any>>;
+  private options: DbContextOptions;
+  private repositories: Record<string, BaseRepository<any>>;
   private queryRunner?: QueryRunner;
 
-  constructor(options: DbContextOptions<T>) {
+  constructor(options: DbContextOptions) {
     this.options = options;
-    this.repositories = new Map();
+    this.repositories = {};
   }
 
   /**
@@ -45,20 +46,8 @@ export class DbContext<T extends RepositoryRegistration = {}> {
     // Initialize repositories for all entities
     for (const entity of entities) {
       const entityName = entity.name.charAt(0).toLowerCase() + entity.name.slice(1);
-      if (!this.repositories.has(entityName)) {
-        this.repositories.set(
-          entityName,
-          BaseRepository.create(this.dataSource, entity as EntityType<any>)
-        );
-      }
-    }
-
-    // Initialize explicitly registered repositories
-    if (this.options.repositories) {
-      for (const [key, entityType] of Object.entries(this.options.repositories)) {
-        if (!this.repositories.has(key)) {
-          this.repositories.set(key, BaseRepository.create(this.dataSource, entityType));
-        }
+      if (!this.repositories[entityName]) {
+        this.repositories[entityName] = BaseRepository.create(this.dataSource, entity as EntityType<any>);
       }
     }
   }
@@ -69,25 +58,22 @@ export class DbContext<T extends RepositoryRegistration = {}> {
   set<Entity extends ObjectLiteral>(entityType: EntityType<Entity>): BaseRepository<Entity> {
     const entityName = entityType.name.charAt(0).toLowerCase() + entityType.name.slice(1);
     
-    if (!this.repositories.has(entityName)) {
-      this.repositories.set(
-        entityName,
-        BaseRepository.create(this.dataSource, entityType)
-      );
+    if (!this.repositories[entityName]) {
+      this.repositories[entityName] = BaseRepository.create(this.dataSource, entityType);
     }
 
-    return this.repositories.get(entityName) as BaseRepository<Entity>;
+    return this.repositories[entityName] as BaseRepository<Entity>;
   }
 
   /**
    * Gets a registered repository by name
    */
-  getRepository<K extends keyof T & string>(name: K): BaseRepository<InstanceType<T[K]>> {
-    const repository = this.repositories.get(name);
+  getRepository<Entity extends ObjectLiteral>(name: string): BaseRepository<Entity> {
+    const repository = this.repositories[name];
     if (!repository) {
-      throw new Error(`Repository '${name}' not found. Make sure it is registered in DbContextOptions.`);
+      throw new Error(`Repository '${name}' not found. Make sure the entity is registered.`);
     }
-    return repository as BaseRepository<InstanceType<T[K]>>;
+    return repository as BaseRepository<Entity>;
   }
 
   /**
@@ -141,11 +127,4 @@ export class DbContext<T extends RepositoryRegistration = {}> {
       await this.dataSource.destroy();
     }
   }
-}
-
-// Add property accessor for registered repositories
-type RepositoryAccessor<T extends RepositoryRegistration> = {
-  [K in keyof T]: BaseRepository<InstanceType<T[K]>>;
-};
-
-export type DbContextWithRepositories<T extends RepositoryRegistration> = DbContext<T> & RepositoryAccessor<T>; 
+} 
