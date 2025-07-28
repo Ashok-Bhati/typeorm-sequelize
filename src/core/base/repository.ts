@@ -129,10 +129,6 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return await this.queryBuilder.getCount();
   }
 
-  async longCount(): Promise<number> {
-    return await this.count();
-  }
-
   // IQueryable implementation
   private parseJsonPredicate<T>(
     predicate: PredicateJSON<T>,

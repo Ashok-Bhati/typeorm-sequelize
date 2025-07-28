@@ -19,7 +19,6 @@ export interface IQueryable<T extends ObjectLiteral> {
   toList(): Promise<Partial<T>[]>;
   toArray(): Promise<Partial<T>[]>;
   count(): Promise<number>;
-  longCount(): Promise<number>;
   any(predicate?: (entity: T) => boolean): Promise<boolean>;
   all(predicate: (entity: T) => boolean): Promise<boolean>;
 
