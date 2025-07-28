@@ -1,16 +1,16 @@
 import jsep from 'jsep';
-import { DeepPartial, ObjectLiteral, Repository, SelectQueryBuilder, SaveOptions, RemoveOptions } from 'typeorm';
+import { DeepPartial, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder } from 'typeorm';
 
-import { FieldComparison, PredicateJSON } from '../types/where';
 import { EntityType } from '../types/entity';
 import { QueryBuilderOptions } from '../types/options';
 import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
+import { FieldComparison, PredicateJSON } from '../types/where';
 import { DbContext } from './context';
 
 /**
  * Base repository class implementing IQueryable interface
  */
-export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T> {
+export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T>, IOrderedQueryable<T> {
   protected readonly repository: Repository<T>;
   protected queryBuilder: SelectQueryBuilder<T>;
   protected options: QueryBuilderOptions;
@@ -234,13 +234,13 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return this;
   }
 
-  orderBy(keySelector: (entity: T) => any): IOrderedQueryable<T> {
-    // TODO: Implement expression parsing for orderBy
+  orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
     return this as unknown as IOrderedQueryable<T>;
   }
 
-  orderByDescending(keySelector: (entity: T) => any): IOrderedQueryable<T> {
-    // TODO: Implement expression parsing for orderByDescending
+  orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
     return this as unknown as IOrderedQueryable<T>;
   }
 
@@ -320,5 +320,14 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
 
   async removeAll(): Promise<void> {
     await this.repository.clear();
+  }
+  
+  thenBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
+    return this as unknown as IOrderedQueryable<T>;
+  }
+  thenByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
+    return this as unknown as IOrderedQueryable<T>;
   }
 } 

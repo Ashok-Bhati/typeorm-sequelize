@@ -12,8 +12,8 @@ export interface IQueryable<T extends ObjectLiteral> {
   single(): Promise<Partial<T>>;
   singleOrDefault(): Promise<Partial<T> | null>;
   where(predicate: PredicateJSON<T>): IQueryable<T>;
-  orderBy(keySelector: (entity: T) => any): IOrderedQueryable<T>;
-  orderByDescending(keySelector: (entity: T) => any): IOrderedQueryable<T>;
+  orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
+  orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
 
   // Collection Methods
   toList(): Promise<Partial<T>[]>;
@@ -43,9 +43,9 @@ export interface IQueryable<T extends ObjectLiteral> {
 /**
  * Represents an ordered queryable collection
  */
-export interface IOrderedQueryable<T extends ObjectLiteral> extends IQueryable<T> {
-  thenBy(keySelector: (entity: T) => any): IOrderedQueryable<T>;
-  thenByDescending(keySelector: (entity: T) => any): IOrderedQueryable<T>;
+export interface IOrderedQueryable<T extends ObjectLiteral> extends Pick<IQueryable<T>, 'toArray' | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take'> {
+  thenBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
+  thenByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
 }
 
 /**
