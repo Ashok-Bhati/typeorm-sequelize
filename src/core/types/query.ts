@@ -11,7 +11,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   firstOrDefault(): Promise<Partial<T> | null>;
   single(): Promise<Partial<T>>;
   singleOrDefault(): Promise<Partial<T> | null>;
-  where(predicate: PredicateJSON<T>): IQueryable<T>;
+  where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'>;
   orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
   orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
 

@@ -224,14 +224,14 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return { whereClause, params };
   }
 
-  where(predicate: PredicateJSON<T>): IQueryable<T> {
+  where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'> {
     const alias = this.queryBuilder.alias;
     const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
     console.log(`whereClause: ${whereClause}`);
     console.log(`params: ${JSON.stringify(params, null, 2)}`);
 
     this.queryBuilder.where(whereClause, params);
-    return this;
+    return this as unknown as Omit<IQueryable<T>, 'where'>;
   }
 
   orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
