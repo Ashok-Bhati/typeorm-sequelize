@@ -249,16 +249,8 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return await this.toList();
   }
 
-  async any(predicate?: (entity: T) => boolean): Promise<boolean> {
-    if (predicate) {
-      // this.where(predicate);
-    }
-    return (await this.count()) > 0;
-  }
-
-  async all(predicate: (entity: T) => boolean): Promise<boolean> {
-    // TODO: Implement expression parsing for all
-    return false;
+  async any(): Promise<boolean> {
+    return await this.queryBuilder.getExists();
   }
 
   // Projection Methods
@@ -267,9 +259,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return this as unknown as IQueryable<TResult>;
   }
 
-  groupBy<TKey>(keySelector: (entity: T) => TKey): IGroupedQueryable<T, TKey> {
-    // TODO: Implement expression parsing for groupBy
-    return this as unknown as IGroupedQueryable<T, TKey>;
+  groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T> {
+    this.queryBuilder.addGroupBy(keySelector as string);
+    return this as unknown as IGroupedQueryable<T>;
   }
 
   // Loading Related Data

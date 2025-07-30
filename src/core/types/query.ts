@@ -19,12 +19,11 @@ export interface IQueryable<T extends ObjectLiteral> {
   toList(): Promise<Partial<T>[]>;
   toArray(): Promise<Partial<T>[]>;
   count(): Promise<number>;
-  any(predicate?: (entity: T) => boolean): Promise<boolean>;
-  all(predicate: (entity: T) => boolean): Promise<boolean>;
+  any(): Promise<boolean>;
 
   // Projection Methods
   select<TResult extends ObjectLiteral>(selector: (entity: T) => TResult): IQueryable<TResult>;
-  groupBy<TKey>(keySelector: (entity: T) => TKey): IGroupedQueryable<T, TKey>;
+  groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 
   // Loading Related Data
   include<TProperty>(navigationProperty: (entity: T) => TProperty | TProperty[]): IQueryable<T>;
@@ -50,8 +49,8 @@ export interface IOrderedQueryable<T extends ObjectLiteral> extends Pick<IQuerya
 /**
  * Represents a grouped queryable collection
  */
-export interface IGroupedQueryable<T extends ObjectLiteral, TKey> extends IQueryable<T> {
-  key: TKey;
+export interface IGroupedQueryable<T extends ObjectLiteral> extends Pick<IQueryable<T>, 'toArray' | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take' | 'orderBy' | 'orderByDescending'> {
+  groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 }
 
 /**
