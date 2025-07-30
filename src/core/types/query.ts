@@ -1,6 +1,7 @@
 import { ObjectLiteral } from 'typeorm';
 
 import { PredicateJSON } from './where';
+import { SelectJSON } from './select';
 
 /**
  * Represents a queryable collection of entities
@@ -22,7 +23,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   any(): Promise<boolean>;
 
   // Projection Methods
-  select<TResult extends ObjectLiteral>(selector: (entity: T) => TResult): IQueryable<TResult>;
+  select(selector: SelectJSON<T>): IQueryable<T>;
   groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 
   // Loading Related Data

@@ -6,6 +6,9 @@ import { QueryBuilderOptions } from '../types/options';
 import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
 import { FieldComparison, PredicateJSON } from '../types/where';
 import { DbContext } from './context';
+import { SelectJSON, SelectorValue } from '../types/select';
+import {stringify} from 'flatted'
+import {cloneDeep, map} from 'lodash'
 
 /**
  * Base repository class implementing IQueryable interface
@@ -19,7 +22,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
   constructor(context: DbContext, entity: EntityType<T>) {
     this.context = context;
     this.repository = context.getRepository(entity);
-    this.queryBuilder = this.repository.createQueryBuilder();
+    this.queryBuilder = this.repository.createQueryBuilder(entity.name.toLowerCase());
     this.options = {};
   }
 
@@ -253,10 +256,25 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return await this.queryBuilder.getExists();
   }
 
+  private addSelect(select: {column: string, alias?: string}, isFirst: boolean = false): void {
+    console.log(`select: ${select.column}, alias: ${select.alias}, isFirst: ${isFirst}`);
+    if (isFirst) {
+      this.queryBuilder.select(select.column, select.alias);
+    } else {
+      this.queryBuilder.addSelect(select.column, select.alias);
+    }
+  }
+
   // Projection Methods
-  select<TResult extends ObjectLiteral>(selector: (entity: T) => TResult): IQueryable<TResult> {
-    // TODO: Implement expression parsing for select
-    return this as unknown as IQueryable<TResult>;
+  select(selector: SelectJSON<T>): IQueryable<T> {
+    const alias = this.queryBuilder.alias;
+    console.log(`alias: ${alias}`);
+    const selectors = Object.entries(selector);
+    map(selectors, ([key, value], index) => {
+      const column = `${alias}.${key}`;
+      this.addSelect({column, alias: (value as SelectorValue).as}, index === 0);
+    });
+    return this;
   }
 
   groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T> {
