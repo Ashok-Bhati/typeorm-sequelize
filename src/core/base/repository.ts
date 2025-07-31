@@ -1,14 +1,14 @@
+import { stringify } from 'flatted'
 import jsep from 'jsep';
+import { cloneDeep, map } from 'lodash'
 import { DeepPartial, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder } from 'typeorm';
 
 import { EntityType } from '../types/entity';
 import { QueryBuilderOptions } from '../types/options';
 import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
+import { SelectJSON, SelectorValue } from '../types/select';
 import { FieldComparison, PredicateJSON } from '../types/where';
 import { DbContext } from './context';
-import { SelectJSON, SelectorValue } from '../types/select';
-import {stringify} from 'flatted'
-import {cloneDeep, map} from 'lodash'
 
 /**
  * Base repository class implementing IQueryable interface
@@ -128,8 +128,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return results[0] || null;
   }
 
-  async count(): Promise<number> {
-    return await this.queryBuilder.getCount();
+  async withCount(): Promise<[number, Partial<T>[]]> {
+    const [results, count] = await this.queryBuilder.getManyAndCount();
+    return [count, results];
   }
 
   // IQueryable implementation

@@ -1,7 +1,7 @@
 import { ObjectLiteral } from 'typeorm';
 
-import { PredicateJSON } from './where';
 import { SelectJSON } from './select';
+import { PredicateJSON } from './where';
 
 /**
  * Represents a queryable collection of entities
@@ -19,7 +19,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   // Collection Methods
   toList(): Promise<Partial<T>[]>;
   toArray(): Promise<Partial<T>[]>;
-  count(): Promise<number>;
+  withCount(): Promise<[number, Partial<T>[]]>;
   any(): Promise<boolean>;
 
   // Projection Methods
