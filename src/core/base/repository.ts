@@ -13,7 +13,7 @@ import { DbContext } from './context';
 /**
  * Base repository class implementing IQueryable interface
  */
-export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T>, IOrderedQueryable<T> {
+export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T>, IOrderedQueryable<T>, IGroupedQueryable<T> {
   protected readonly repository: Repository<T>;
   protected queryBuilder: SelectQueryBuilder<T>;
   protected options: QueryBuilderOptions;
@@ -26,77 +26,10 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     this.options = {};
   }
 
-  /**
-   * Gets the underlying TypeORM repository for direct operations
-   */
-  protected getTypeORMRepository(): Repository<T> {
-    return this.repository;
-  }
+  //#region IQueryable implementation
 
-  /**
-   * Creates a new query builder instance
-   */
-  protected createQueryBuilder(alias?: string): SelectQueryBuilder<T> {
-    return this.repository.createQueryBuilder(alias);
-  }
+  //#region Basic Query Methods
 
-  /**
-   * Executes a raw SQL query
-   */
-  protected async query(sql: string, parameters?: any[]): Promise<any> {
-    return this.repository.query(sql, parameters);
-  }
-
-  /**
-   * Creates a new instance of the entity
-   */
-  protected create(data: DeepPartial<T>): T {
-    return this.repository.create(data);
-  }
-
-  /**
-   * Saves one or more entities
-   */
-  async save(entity: DeepPartial<T>, options?: SaveOptions): Promise<T>;
-  async save(entities: DeepPartial<T>[], options?: SaveOptions): Promise<T[]>;
-  async save(entityOrEntities: DeepPartial<T> | DeepPartial<T>[], options?: SaveOptions): Promise<T | T[]> {
-    return this.repository.save(entityOrEntities as any, options);
-  }
-
-  /**
-   * Removes one or more entities
-   */
-  async remove(entity: T, options?: RemoveOptions): Promise<T>;
-  async remove(entities: T[], options?: RemoveOptions): Promise<T[]>;
-  async remove(entityOrEntities: T | T[], options?: RemoveOptions): Promise<T | T[]> {
-    if (Array.isArray(entityOrEntities)) {
-      return this.repository.remove(entityOrEntities, options);
-    }
-    return this.repository.remove(entityOrEntities, options);
-  }
-
-  /**
-   * Finds entities that match given conditions
-   */
-  protected async find(conditions?: any): Promise<T[]> {
-    return this.repository.find(conditions);
-  }
-
-  /**
-   * Finds first entity that matches given conditions
-   */
-  protected async findOne(conditions?: any): Promise<T | null> {
-    return this.repository.findOne(conditions);
-  }
-
-  /**
-   * Counts entities that match given conditions
-   */
-  protected async countBy(conditions?: any): Promise<number> {
-    return this.repository.count(conditions);
-  }
-
-  // Required IQueryable implementation
   async first(): Promise<T> {
     const result = await this.queryBuilder.limit(1).getOne();
     if (!result) {
@@ -127,13 +60,141 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     }
     return results[0] || null;
   }
+  
+  where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'> {
+    const alias = this.queryBuilder.alias;
+    const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
+    console.log(`whereClause: ${whereClause}`);
+    console.log(`params: ${JSON.stringify(params, null, 2)}`);
+
+    this.queryBuilder.where(whereClause, params);
+    return this as unknown as Omit<IQueryable<T>, 'where'>;
+  }
+  
+  orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
+    return this as unknown as IOrderedQueryable<T>;
+  }
+  
+  orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
+    return this as unknown as IOrderedQueryable<T>;
+  }
+
+  //#endregion
+
+  //#region Collection Methods
+
+  async toList(): Promise<T[]> {
+    return await this.queryBuilder.getMany();
+  }
 
   async withCount(): Promise<[number, Partial<T>[]]> {
     const [results, count] = await this.queryBuilder.getManyAndCount();
     return [count, results];
   }
 
-  // IQueryable implementation
+  async any(): Promise<boolean> {
+    return await this.queryBuilder.getExists();
+  }
+
+  //#endregion
+
+  //#region Projection Methods
+
+  select(selector: SelectJSON<T>): IQueryable<T> {
+    const alias = this.queryBuilder.alias;
+    console.log(`alias: ${alias}`);
+    const selectors = Object.entries(selector);
+    map(selectors, ([key, value], index) => {
+      const column = `${alias}.${key}`;
+      this.addSelect({column, alias: (value as SelectorValue).as}, index === 0);
+    });
+    return this;
+  }
+
+  groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T> {
+    this.queryBuilder.groupBy(keySelector as string);
+    return this as unknown as IGroupedQueryable<T>;
+  }
+
+  //#endregion
+
+  //#region Loading Related Data
+
+  include<TProperty>(navigationProperty: (entity: T) => TProperty | TProperty[]): IQueryable<T> {
+    // TODO: Implement expression parsing for include
+    return this;
+  }
+
+  asNoTracking(): IQueryable<T> {
+    this.options.tracking = false;
+    return this;
+  }
+
+  //#endregion
+
+  //#region Set Operations
+
+  distinct(): IQueryable<T> {
+    this.queryBuilder.distinct();
+    return this;
+  }
+
+  skip(count: number): IQueryable<T> {
+    this.queryBuilder.skip(count);
+    return this;
+  }
+
+  take(count: number): IQueryable<T> {
+    this.queryBuilder.take(count);
+    return this;
+  }
+
+  union(other: IQueryable<T>): IQueryable<T> {
+    // TODO: Implement union
+    return this;
+  }
+
+  intersect(other: IQueryable<T>): IQueryable<T> {
+    // TODO: Implement intersect
+    return this;
+  }
+
+  except(other: IQueryable<T>): IQueryable<T> {
+    // TODO: Implement except
+    return this;
+  }
+
+  //#endregion
+
+  //#endregion
+
+  //#region IOrderedQueryable implementation
+
+  thenBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
+    return this as unknown as IOrderedQueryable<T>;
+  }
+
+  thenByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+    this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
+    return this as unknown as IOrderedQueryable<T>;
+  }
+
+  //#endregion
+
+  //#region IGroupedQueryable implementation
+
+  thenGroupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T> {
+    this.queryBuilder.addGroupBy(keySelector as string);
+    return this as unknown as IGroupedQueryable<T>;
+  }
+
+  //#endregion
+
+  //#region private methods
+
   private parseJsonPredicate<T>(
     predicate: PredicateJSON<T>,
     alias: string
@@ -224,39 +285,6 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return { whereClause, params };
   }
 
-  where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'> {
-    const alias = this.queryBuilder.alias;
-    const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
-    console.log(`whereClause: ${whereClause}`);
-    console.log(`params: ${JSON.stringify(params, null, 2)}`);
-
-    this.queryBuilder.where(whereClause, params);
-    return this as unknown as Omit<IQueryable<T>, 'where'>;
-  }
-
-  orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
-    this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
-    return this as unknown as IOrderedQueryable<T>;
-  }
-
-  orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
-    this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
-    return this as unknown as IOrderedQueryable<T>;
-  }
-
-  // Collection Methods
-  async toList(): Promise<T[]> {
-    return await this.queryBuilder.getMany();
-  }
-
-  async toArray(): Promise<T[]> {
-    return await this.toList();
-  }
-
-  async any(): Promise<boolean> {
-    return await this.queryBuilder.getExists();
-  }
-
   private addSelect(select: {column: string, alias?: string}, isFirst: boolean = false): void {
     console.log(`select: ${select.column}, alias: ${select.alias}, isFirst: ${isFirst}`);
     if (isFirst) {
@@ -266,75 +294,5 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     }
   }
 
-  // Projection Methods
-  select(selector: SelectJSON<T>): IQueryable<T> {
-    const alias = this.queryBuilder.alias;
-    console.log(`alias: ${alias}`);
-    const selectors = Object.entries(selector);
-    map(selectors, ([key, value], index) => {
-      const column = `${alias}.${key}`;
-      this.addSelect({column, alias: (value as SelectorValue).as}, index === 0);
-    });
-    return this;
-  }
-
-  groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T> {
-    this.queryBuilder.addGroupBy(keySelector as string);
-    return this as unknown as IGroupedQueryable<T>;
-  }
-
-  // Loading Related Data
-  include<TProperty>(navigationProperty: (entity: T) => TProperty | TProperty[]): IQueryable<T> {
-    // TODO: Implement expression parsing for include
-    return this;
-  }
-
-  asNoTracking(): IQueryable<T> {
-    this.options.tracking = false;
-    return this;
-  }
-
-  // Set Operations
-  distinct(): IQueryable<T> {
-    this.queryBuilder.distinct();
-    return this;
-  }
-
-  skip(count: number): IQueryable<T> {
-    this.queryBuilder.skip(count);
-    return this;
-  }
-
-  take(count: number): IQueryable<T> {
-    this.queryBuilder.take(count);
-    return this;
-  }
-
-  union(other: IQueryable<T>): IQueryable<T> {
-    // TODO: Implement union
-    return this;
-  }
-
-  intersect(other: IQueryable<T>): IQueryable<T> {
-    // TODO: Implement intersect
-    return this;
-  }
-
-  except(other: IQueryable<T>): IQueryable<T> {
-    // TODO: Implement except
-    return this;
-  }
-
-  async removeAll(): Promise<void> {
-    await this.repository.clear();
-  }
-  
-  thenBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
-    this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
-    return this as unknown as IOrderedQueryable<T>;
-  }
-  thenByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
-    this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
-    return this as unknown as IOrderedQueryable<T>;
-  }
+  //#endregion
 } 

@@ -3,27 +3,35 @@ import { ObjectLiteral } from 'typeorm';
 import { SelectJSON } from './select';
 import { PredicateJSON } from './where';
 
+export interface IQueryableWhereResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'where'> {}
+export interface IQueryableSelectResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'select'> {}
+export interface IQueryableGroupByResult<T extends ObjectLiteral> extends Pick<IQueryable<T>, | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take' | 'orderBy' | 'orderByDescending'> {}
+export interface IQueryableOrderByResult<T extends ObjectLiteral> extends Omit<IQueryableGroupByResult<T>, 'orderBy' | 'orderByDescending'> {}
+export type SingleResult<T extends ObjectLiteral> = Partial<T>;
+export type SingleResultOrNull<T extends ObjectLiteral> = Partial<T> | null;
+export type ListResult<T extends ObjectLiteral> = Partial<T>[];
+
+
 /**
  * Represents a queryable collection of entities
  */
 export interface IQueryable<T extends ObjectLiteral> {
   // Basic Query Methods
-  first(): Promise<Partial<T>>;
-  firstOrDefault(): Promise<Partial<T> | null>;
-  single(): Promise<Partial<T>>;
-  singleOrDefault(): Promise<Partial<T> | null>;
-  where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'>;
+  first(): Promise<SingleResult<T>>;
+  firstOrDefault(): Promise<SingleResultOrNull<T>>;
+  single(): Promise<SingleResult<T>>;
+  singleOrDefault(): Promise<SingleResultOrNull<T>>;
+  where(predicate: PredicateJSON<T>): IQueryableWhereResult<T>;
   orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
   orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
 
   // Collection Methods
-  toList(): Promise<Partial<T>[]>;
-  toArray(): Promise<Partial<T>[]>;
-  withCount(): Promise<[number, Partial<T>[]]>;
+  toList(): Promise<ListResult<T>>;
+  withCount(): Promise<[number, ListResult<T>]>;
   any(): Promise<boolean>;
 
   // Projection Methods
-  select(selector: SelectJSON<T>): IQueryable<T>;
+  select(selector: SelectJSON<T>): IQueryableSelectResult<T>;
   groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 
   // Loading Related Data
@@ -42,7 +50,7 @@ export interface IQueryable<T extends ObjectLiteral> {
 /**
  * Represents an ordered queryable collection
  */
-export interface IOrderedQueryable<T extends ObjectLiteral> extends Pick<IQueryable<T>, 'toArray' | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take'> {
+export interface IOrderedQueryable<T extends ObjectLiteral> extends IQueryableOrderByResult<T> {
   thenBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
   thenByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T>;
 }
@@ -50,8 +58,8 @@ export interface IOrderedQueryable<T extends ObjectLiteral> extends Pick<IQuerya
 /**
  * Represents a grouped queryable collection
  */
-export interface IGroupedQueryable<T extends ObjectLiteral> extends Pick<IQueryable<T>, 'toArray' | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take' | 'orderBy' | 'orderByDescending'> {
-  groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
+export interface IGroupedQueryable<T extends ObjectLiteral> extends IQueryableGroupByResult<T> {
+  thenGroupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 }
 
 /**
