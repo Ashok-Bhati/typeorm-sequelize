@@ -35,7 +35,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 
   // Loading Related Data
-  include<TProperty>(navigationProperty: (entity: T) => TProperty | TProperty[]): IQueryable<T>;
+  include<TProperty>(keySelector: TProperty, as?: string): IQueryable<T>;
   asNoTracking(): IQueryable<T>;
 
   // Set Operations

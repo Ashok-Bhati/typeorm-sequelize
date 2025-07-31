@@ -122,8 +122,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
 
   //#region Loading Related Data
 
-  include<TProperty>(navigationProperty: (entity: T) => TProperty | TProperty[]): IQueryable<T> {
-    // TODO: Implement expression parsing for include
+  include<TProperty>(keySelector: TProperty, as?: string): IQueryable<T> {
+    const alias = this.queryBuilder.alias;
+    this.queryBuilder.leftJoinAndSelect(`${alias}.${keySelector}`, as || keySelector as string);
     return this;
   }
 
