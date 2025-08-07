@@ -1,11 +1,27 @@
-import { stringify } from 'flatted'
+import { stringify } from 'flatted';
 import jsep from 'jsep';
-import { cloneDeep, map } from 'lodash'
-import { DeepPartial, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder } from 'typeorm';
+import { cloneDeep, map } from 'lodash';
+import {
+  DeepPartial,
+  EntityMetadata,
+  ObjectLiteral,
+  RemoveOptions,
+  Repository,
+  SaveOptions,
+  SelectQueryBuilder,
+} from 'typeorm';
+import { RelationMetadata } from 'typeorm/metadata/RelationMetadata';
 
 import { EntityType } from '../types/entity';
+import { IncludeJSON, IncludeValue } from '../types/include';
 import { QueryBuilderOptions } from '../types/options';
-import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, QueryOptions } from '../types/query';
+import {
+  ExpressionParseResult,
+  IGroupedQueryable,
+  IOrderedQueryable,
+  IQueryable,
+  QueryOptions,
+} from '../types/query';
 import { SelectJSON, SelectorValue } from '../types/select';
 import { FieldComparison, PredicateJSON } from '../types/where';
 import { DbContext } from './context';
@@ -13,17 +29,25 @@ import { DbContext } from './context';
 /**
  * Base repository class implementing IQueryable interface
  */
-export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> implements IQueryable<T>, IOrderedQueryable<T>, IGroupedQueryable<T> {
+export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
+  implements IQueryable<T>, IOrderedQueryable<T>, IGroupedQueryable<T>
+{
   protected readonly repository: Repository<T>;
   protected queryBuilder: SelectQueryBuilder<T>;
   protected options: QueryBuilderOptions;
   protected readonly context: DbContext;
+  protected metadata: EntityMetadata;
+  protected readonly relations: Record<string, EntityMetadata> = {};
 
   constructor(context: DbContext, entity: EntityType<T>) {
     this.context = context;
     this.repository = context.getRepository(entity);
     this.queryBuilder = this.repository.createQueryBuilder(entity.name.toLowerCase());
     this.options = {};
+    this.metadata = this.repository.metadata;
+    this.metadata.relations.forEach((relation) => {
+      this.relations[relation.propertyName] = relation.inverseEntityMetadata;
+    });
   }
 
   //#region IQueryable implementation
@@ -60,7 +84,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     }
     return results[0] || null;
   }
-  
+
   where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'> {
     const alias = this.queryBuilder.alias;
     const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
@@ -70,13 +94,15 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     this.queryBuilder.where(whereClause, params);
     return this as unknown as Omit<IQueryable<T>, 'where'>;
   }
-  
+
   orderBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
     this.queryBuilder.addOrderBy(keySelector as string, 'ASC');
     return this as unknown as IOrderedQueryable<T>;
   }
-  
-  orderByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+
+  orderByDescending<K extends keyof T>(
+    keySelector: T[K] extends Function ? never : K,
+  ): IOrderedQueryable<T> {
     this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
     return this as unknown as IOrderedQueryable<T>;
   }
@@ -108,7 +134,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     const selectors = Object.entries(selector);
     map(selectors, ([key, value], index) => {
       const column = `${alias}.${key}`;
-      this.addSelect({column, alias: (value as SelectorValue).as}, index === 0);
+      this.addSelect({ column, alias: (value as SelectorValue).as }, index === 0);
     });
     return this;
   }
@@ -122,9 +148,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
 
   //#region Loading Related Data
 
-  include<TProperty>(keySelector: TProperty, as?: string): IQueryable<T> {
+  include(keySelector: IncludeJSON<T>): IQueryable<T> {
     const alias = this.queryBuilder.alias;
-    this.queryBuilder.leftJoinAndSelect(`${alias}.${keySelector}`, as || keySelector as string);
+    this.addInclude(keySelector, alias);
     return this;
   }
 
@@ -178,7 +204,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     return this as unknown as IOrderedQueryable<T>;
   }
 
-  thenByDescending<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IOrderedQueryable<T> {
+  thenByDescending<K extends keyof T>(
+    keySelector: T[K] extends Function ? never : K,
+  ): IOrderedQueryable<T> {
     this.queryBuilder.addOrderBy(keySelector as string, 'DESC');
     return this as unknown as IOrderedQueryable<T>;
   }
@@ -187,7 +215,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
 
   //#region IGroupedQueryable implementation
 
-  thenGroupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T> {
+  thenGroupBy<K extends keyof T>(
+    keySelector: T[K] extends Function ? never : K,
+  ): IGroupedQueryable<T> {
     this.queryBuilder.addGroupBy(keySelector as string);
     return this as unknown as IGroupedQueryable<T>;
   }
@@ -196,13 +226,10 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
 
   //#region private methods
 
-  private parseJsonPredicate<T>(
-    predicate: PredicateJSON<T>,
-    alias: string
-  ): ExpressionParseResult {
+  private parseJsonPredicate<T>(predicate: PredicateJSON<T>, alias: string): ExpressionParseResult {
     const params: Record<string, any> = {};
     let index = 0;
-  
+
     function walk(expr: PredicateJSON<T>): string {
       if ('$and' in expr) {
         return `(${(expr.$and as any[]).map(walk).join(' AND ')})`;
@@ -210,83 +237,87 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
       if ('$or' in expr) {
         return `(${(expr.$or as any[]).map(walk).join(' OR ')})`;
       }
-  
-      return Object.entries(expr).map(([field, conditions]) => {
-        return Object.entries(conditions as FieldComparison).map(([op, value]) => {
-          const paramKey = `${field}_${index++}`;
-  
-          const column = `${alias}.${field}`;
-          switch (op) {
-            case '$eq':
-              params[paramKey] = value;
-              return `${column} = :${paramKey}`;
-            case '$ne':
-              params[paramKey] = value;
-              return `${column} != :${paramKey}`;
-            case '$lt':
-              params[paramKey] = value;
-              return `${column} < :${paramKey}`;
-            case '$lte':
-              params[paramKey] = value;
-              return `${column} <= :${paramKey}`;
-            case '$gt':
-              params[paramKey] = value;
-              return `${column} > :${paramKey}`;
-            case '$gte':
-              params[paramKey] = value;
-              return `${column} >= :${paramKey}`;
-            case '$in':
-              params[paramKey] = value;
-              return `${column} IN (:...${paramKey})`;
-            case '$notIn':
-              params[paramKey] = value;
-              return `${column} NOT IN (:...${paramKey})`;
-            case '$between': {
-              const [start, end] = value as [any, any];
-              params[`${paramKey}_start`] = start;
-              params[`${paramKey}_end`] = end;
-              return `${column} BETWEEN :${paramKey}_start AND :${paramKey}_end`;
-            }
-            case '$like':
-              params[paramKey] = `%${value}%`;
-              return `${column} LIKE :${paramKey}`;
-            case '$iLike':
-              params[paramKey] = `%${value}%`;
-              return `${column} ILIKE :${paramKey}`;
-            case '$notLike':
-              params[paramKey] = `%${value}%`;
-              return `${column} NOT LIKE :${paramKey}`;
-            case '$notILike':
-              params[paramKey] = `%${value}%`;
-              return `${column} NOT ILIKE :${paramKey}`;
-            case '$isNull':
-              return `${column} IS NULL`;
-            case '$isNotNull':
-              return `${column} IS NOT NULL`;
-            case '$contains':
-              params[paramKey] = `%${value}%`;
-              return `${column} LIKE :${paramKey}`;
-            case '$startsWith':
-              params[paramKey] = `${value}%`;
-              return `${column} LIKE :${paramKey}`;
-            case '$endsWith':
-              params[paramKey] = `%${value}`;
-              return `${column} LIKE :${paramKey}`;
-            case '$matches':
-              params[paramKey] = value;
-              return `${column} ~ :${paramKey}`;
-            default:
-              throw new Error(`Unsupported operator: ${op}`);
-          }
-        }).join(' AND ');
-      }).join(' AND ');
+
+      return Object.entries(expr)
+        .map(([field, conditions]) => {
+          return Object.entries(conditions as FieldComparison)
+            .map(([op, value]) => {
+              const paramKey = `${field}_${index++}`;
+
+              const column = `${alias}.${field}`;
+              switch (op) {
+                case '$eq':
+                  params[paramKey] = value;
+                  return `${column} = :${paramKey}`;
+                case '$ne':
+                  params[paramKey] = value;
+                  return `${column} != :${paramKey}`;
+                case '$lt':
+                  params[paramKey] = value;
+                  return `${column} < :${paramKey}`;
+                case '$lte':
+                  params[paramKey] = value;
+                  return `${column} <= :${paramKey}`;
+                case '$gt':
+                  params[paramKey] = value;
+                  return `${column} > :${paramKey}`;
+                case '$gte':
+                  params[paramKey] = value;
+                  return `${column} >= :${paramKey}`;
+                case '$in':
+                  params[paramKey] = value;
+                  return `${column} IN (:...${paramKey})`;
+                case '$notIn':
+                  params[paramKey] = value;
+                  return `${column} NOT IN (:...${paramKey})`;
+                case '$between': {
+                  const [start, end] = value as [any, any];
+                  params[`${paramKey}_start`] = start;
+                  params[`${paramKey}_end`] = end;
+                  return `${column} BETWEEN :${paramKey}_start AND :${paramKey}_end`;
+                }
+                case '$like':
+                  params[paramKey] = `%${value}%`;
+                  return `${column} LIKE :${paramKey}`;
+                case '$iLike':
+                  params[paramKey] = `%${value}%`;
+                  return `${column} ILIKE :${paramKey}`;
+                case '$notLike':
+                  params[paramKey] = `%${value}%`;
+                  return `${column} NOT LIKE :${paramKey}`;
+                case '$notILike':
+                  params[paramKey] = `%${value}%`;
+                  return `${column} NOT ILIKE :${paramKey}`;
+                case '$isNull':
+                  return `${column} IS NULL`;
+                case '$isNotNull':
+                  return `${column} IS NOT NULL`;
+                case '$contains':
+                  params[paramKey] = `%${value}%`;
+                  return `${column} LIKE :${paramKey}`;
+                case '$startsWith':
+                  params[paramKey] = `${value}%`;
+                  return `${column} LIKE :${paramKey}`;
+                case '$endsWith':
+                  params[paramKey] = `%${value}`;
+                  return `${column} LIKE :${paramKey}`;
+                case '$matches':
+                  params[paramKey] = value;
+                  return `${column} ~ :${paramKey}`;
+                default:
+                  throw new Error(`Unsupported operator: ${op}`);
+              }
+            })
+            .join(' AND ');
+        })
+        .join(' AND ');
     }
-  
+
     const whereClause = walk(predicate);
     return { whereClause, params };
   }
 
-  private addSelect(select: {column: string, alias?: string}, isFirst: boolean = false): void {
+  private addSelect(select: { column: string; alias?: string }, isFirst: boolean = false): void {
     console.log(`select: ${select.column}, alias: ${select.alias}, isFirst: ${isFirst}`);
     if (isFirst) {
       this.queryBuilder.select(select.column, select.alias);
@@ -295,5 +326,33 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral> im
     }
   }
 
+  private addInclude<U extends ObjectLiteral>(
+    data: IncludeJSON<U>,
+    parentAlias: string = this.queryBuilder.alias,
+    parentPath: string = ''
+  ): void {
+    const selectors = Object.entries(data);
+    console.log(`selectors: ${JSON.stringify(selectors, null, 2)}`);
+    map(selectors, ([key, value]) => {
+      const propertyPath = parentPath ? `${parentPath}.${key}` : key;
+      console.log(`propertyPath: ${propertyPath}`);
+      const column = `${parentAlias}.${key}`;
+      console.log(`column: ${column}`);
+      if (typeof value === 'object') {
+        const realValue = value as IncludeValue<U, keyof U>;
+        const { as, include } = realValue;
+        const relationAlias = as || `${parentAlias}_${key}`;
+        console.log(`relationAlias: ${relationAlias}`);
+        this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+        if (include) {
+          this.addInclude(include, relationAlias, propertyPath);
+        }
+      } else {
+        const relationAlias = `${parentAlias}_${key}`;
+        this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+      }
+    });
+  }
+
   //#endregion
-} 
+}

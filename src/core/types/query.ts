@@ -1,5 +1,6 @@
-import { ObjectLiteral } from 'typeorm';
+import { EntityMetadata, ObjectLiteral } from 'typeorm';
 
+import { IncludeJSON } from './include';
 import { SelectJSON } from './select';
 import { PredicateJSON } from './where';
 
@@ -10,7 +11,7 @@ export interface IQueryableOrderByResult<T extends ObjectLiteral> extends Omit<I
 export type SingleResult<T extends ObjectLiteral> = Partial<T>;
 export type SingleResultOrNull<T extends ObjectLiteral> = Partial<T> | null;
 export type ListResult<T extends ObjectLiteral> = Partial<T>[];
-
+export type Relations = Record<string, EntityMetadata>;
 
 /**
  * Represents a queryable collection of entities
@@ -35,7 +36,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 
   // Loading Related Data
-  include<TProperty>(keySelector: TProperty, as?: string): IQueryable<T>;
+  include(keySelector: IncludeJSON<T>): IQueryable<T>;
   asNoTracking(): IQueryable<T>;
 
   // Set Operations
