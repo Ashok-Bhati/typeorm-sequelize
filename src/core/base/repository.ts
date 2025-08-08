@@ -1,6 +1,6 @@
 import { stringify } from 'flatted';
 import jsep from 'jsep';
-import { cloneDeep, map } from 'lodash';
+import { cloneDeep, map, set } from 'lodash';
 import {
   DeepPartial,
   EntityMetadata,
@@ -13,18 +13,21 @@ import {
 import { RelationMetadata } from 'typeorm/metadata/RelationMetadata';
 
 import { EntityType } from '../types/entity';
-import { IncludeJSON, IncludeValue } from '../types/include';
+import { IncludeJSON, IncludeJSONWithColumns, IncludeValue, IncludeValueWithColumns } from '../types/include';
 import { QueryBuilderOptions } from '../types/options';
 import {
   ExpressionParseResult,
   IGroupedQueryable,
   IOrderedQueryable,
   IQueryable,
+  IQueryableRelationResult,
   QueryOptions,
 } from '../types/query';
-import { SelectJSON, SelectorValue } from '../types/select';
+import { SelectJSON, ScalarSelectorValue } from '../types/select';
 import { FieldComparison, PredicateJSON } from '../types/where';
 import { DbContext } from './context';
+import { deepClone } from '../utils';
+import { get } from 'lodash'
 
 /**
  * Base repository class implementing IQueryable interface
@@ -37,7 +40,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   protected options: QueryBuilderOptions;
   protected readonly context: DbContext;
   protected metadata: EntityMetadata;
-  protected readonly relations: Record<string, EntityMetadata> = {};
+  protected readonly relationAliases: Record<string, { alias: string; path: string }> = {};
+  protected selectedRelationColumns: IncludeJSONWithColumns<T> = {};
+  protected selectedColumns: Record<string, boolean | { alias: string }> = {};
 
   constructor(context: DbContext, entity: EntityType<T>) {
     this.context = context;
@@ -45,9 +50,6 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     this.queryBuilder = this.repository.createQueryBuilder(entity.name.toLowerCase());
     this.options = {};
     this.metadata = this.repository.metadata;
-    this.metadata.relations.forEach((relation) => {
-      this.relations[relation.propertyName] = relation.inverseEntityMetadata;
-    });
   }
 
   //#region IQueryable implementation
@@ -88,8 +90,8 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   where(predicate: PredicateJSON<T>): Omit<IQueryable<T>, 'where'> {
     const alias = this.queryBuilder.alias;
     const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
-    console.log(`whereClause: ${whereClause}`);
-    console.log(`params: ${JSON.stringify(params, null, 2)}`);
+    // console.log(`whereClause: ${whereClause}`);
+    // console.log(`params: ${JSON.stringify(params, null, 2)}`);
 
     this.queryBuilder.where(whereClause, params);
     return this as unknown as Omit<IQueryable<T>, 'where'>;
@@ -112,7 +114,11 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   //#region Collection Methods
 
   async toList(): Promise<T[]> {
-    return await this.queryBuilder.getMany();
+    console.log(`\n================ toList ==================\n`);
+    console.log(`queryBuilder: ${this.queryBuilder.getQueryAndParameters()}`);
+    console.log(`\n================ toList end ==================\n`);
+    const data = await this.queryBuilder.getMany();
+    return data.map((item) => this.filterSelectedColumns(item));
   }
 
   async withCount(): Promise<[number, Partial<T>[]]> {
@@ -129,13 +135,10 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   //#region Projection Methods
 
   select(selector: SelectJSON<T>): IQueryable<T> {
+    // console.log('\n================ select ==================\n');
     const alias = this.queryBuilder.alias;
-    console.log(`alias: ${alias}`);
-    const selectors = Object.entries(selector);
-    map(selectors, ([key, value], index) => {
-      const column = `${alias}.${key}`;
-      this.addSelect({ column, alias: (value as SelectorValue).as }, index === 0);
-    });
+    this.addSelect(selector, alias);
+    // console.log('\n================ select end ==================\n');
     return this;
   }
 
@@ -148,10 +151,12 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
 
   //#region Loading Related Data
 
-  include(keySelector: IncludeJSON<T>): IQueryable<T> {
+  include(keySelector: IncludeJSON<T>): IQueryableRelationResult<T> {
+    // console.log('\n================ include ==================\n');
     const alias = this.queryBuilder.alias;
     this.addInclude(keySelector, alias);
-    return this;
+    // console.log('\n================ include end ==================\n');
+    return this as unknown as IQueryableRelationResult<T>;
   }
 
   asNoTracking(): IQueryable<T> {
@@ -317,19 +322,104 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     return { whereClause, params };
   }
 
-  private addSelect(select: { column: string; alias?: string }, isFirst: boolean = false): void {
-    console.log(`select: ${select.column}, alias: ${select.alias}, isFirst: ${isFirst}`);
-    if (isFirst) {
-      this.queryBuilder.select(select.column, select.alias);
-    } else {
-      this.queryBuilder.addSelect(select.column, select.alias);
-    }
+  private addSelect<U extends ObjectLiteral>(
+    data: SelectJSON<U>,
+    parentAlias: string = this.queryBuilder.alias,
+    isFirst: boolean = true,
+    relationKey: string = '',
+  ): void {
+    console.log('\n================ addSelect ==================\n');
+    console.log(`parentAlias: ${parentAlias}`);
+    const selectors = Object.entries(data);
+    console.log(`selectors: ${JSON.stringify(selectors, null, 2)}`);
+    map(selectors, ([key, value], index) => {
+      let relationPath = `${relationKey ? `${relationKey}.${key}` : key}`;
+      console.log(`path: ${relationPath}`);
+      const alias = `${parentAlias}_${key}`;
+      console.log(`alias: ${alias}`);
+
+
+      if (typeof value === 'object') {
+        if (value !== null && 'as' in value) {
+          console.log(`value is object and has as alias`);
+          set(this.selectedColumns, key, { alias: (value as ScalarSelectorValue<U, keyof U>).as });
+        } else {
+          console.log(`value is object and does not have as alias`);
+          console.log(`this.relationAliases: ${JSON.stringify(this.relationAliases, null, 2)}`);
+          const relationAlias = this.relationAliases[relationPath];
+          if(!relationAlias){
+            throw new Error(`Relation alias not found for ${relationPath}`);
+          }
+          console.log(`relationAlias: ${JSON.stringify(relationAlias, null, 2)}`);
+          const path = relationAlias.path;
+          const pathSplit = path.split('.');
+          const pathSplitLength = pathSplit.length;
+          if (pathSplitLength > 1) {
+            console.log(`pathSplitLength > 1`);
+            const selectedRelationColumnsPath = pathSplit.slice(0, -1).join('.');
+            const selectedRelationColumn = get(
+              this.selectedRelationColumns,
+              selectedRelationColumnsPath,
+            );
+            if (selectedRelationColumn) {
+              console.log(
+                `selectedRelationColumn: ${JSON.stringify(selectedRelationColumn, null, 2)}`,
+              );
+              set(selectedRelationColumn, key, {
+                ...selectedRelationColumn,
+                alias: relationAlias.alias,
+                columns: [],
+                path: relationAlias.path,
+              });
+            } else {
+              console.log(`selectedRelationColumn not found`);
+              set(this.selectedRelationColumns, selectedRelationColumnsPath, {
+                [key]: { alias: relationAlias.alias, columns: [], path: relationAlias.path },
+              });
+              console.log(`this.selectedRelationColumns: ${JSON.stringify(this.selectedRelationColumns, null, 2)}`);
+            }
+          } else {
+            console.log(`pathSplitLength <= 1`);
+            set(this.selectedRelationColumns, path, {
+              alias: relationAlias.alias,
+              columns: [],
+              path: relationAlias.path,
+            });
+          }
+          this.addSelect(value as SelectJSON<U>, relationAlias.alias, false, path);
+        }
+      } else if (value === true && !relationKey) {
+        console.log(`value is true and relationKey is not set`);
+        set(this.selectedColumns, key, true);
+      } else if (value === true && relationKey) {
+        console.log(`value is true and relationKey is ${relationKey}`);
+        console.log(`relationKey: ${relationKey}`);
+        console.log(
+          `selectedRelationColumns: ${JSON.stringify(this.selectedRelationColumns, null, 2)}`,
+        );
+        const relationAlias = get(this.selectedRelationColumns, relationKey);
+        console.log(`relationAlias: ${relationAlias}`);
+        set(this.selectedRelationColumns, relationKey, {
+          alias: relationAlias.alias,
+          columns: {
+            ...relationAlias.columns,
+            [key]: true,
+          },
+          path: relationAlias.path,
+        });
+      }
+      console.log(
+        `this.selectedRelationColumns: ${JSON.stringify(this.selectedRelationColumns, null, 2)}`,
+      );
+      this.filterSelectedRelationColumnsUndefined(this.selectedRelationColumns);
+    });
+    console.log('\n================ addSelect end ==================\n');
   }
 
   private addInclude<U extends ObjectLiteral>(
     data: IncludeJSON<U>,
     parentAlias: string = this.queryBuilder.alias,
-    parentPath: string = ''
+    parentPath: string = '',
   ): void {
     const selectors = Object.entries(data);
     console.log(`selectors: ${JSON.stringify(selectors, null, 2)}`);
@@ -343,13 +433,142 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         const { as, include } = realValue;
         const relationAlias = as || `${parentAlias}_${key}`;
         console.log(`relationAlias: ${relationAlias}`);
+        this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
         this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+        console.log(`expressionMapAliases: ${stringify(this.queryBuilder.expressionMap.aliases)}`);
         if (include) {
           this.addInclude(include, relationAlias, propertyPath);
         }
       } else {
         const relationAlias = `${parentAlias}_${key}`;
+        this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
         this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+      }
+    });
+  }
+
+  private selectColumn(path: string, alias: string, isFirst: boolean = false): void {
+    console.log(`\n================ selectColumn ==================\n`);
+    console.log(`path: ${path}`);
+    console.log(`alias: ${alias}`);
+    console.log(`isFirst: ${isFirst}`);
+    // if (isFirst) {
+    //   this.queryBuilder.select(path, alias);
+    // } else {
+    this.queryBuilder.addSelect(path, alias);
+    // }
+    console.log(`\n================ selectColumn end ==================\n`);
+  }
+
+  private filterSelectedColumns(data: T): T {
+    // console.log(`\n================ filterSelectedColumns ==================\n`);
+    // console.log(`data: ${JSON.stringify(data, null, 2)}`);
+    // console.log(
+    //   `selectedRelationColumns: ${JSON.stringify(this.selectedRelationColumns, null, 2)}`,
+    // );
+    // console.log(`selectedColumns: ${JSON.stringify(this.selectedColumns, null, 2)}`);
+    const result: Record<string, any> = {};
+    for (const key in this.selectedColumns) {
+      const realValue = this.selectedColumns[key];
+      if (typeof realValue === 'boolean') {
+        result[key] = get(data, key);
+      } else {
+        result[realValue.alias] = get(data, key);
+      }
+    }
+    this.mapRelationColumns(data, this.selectedRelationColumns, result);
+    // console.log(`result: ${JSON.stringify(result, null, 2)}`);
+    // console.log(`\n================ filterSelectedColumns end ==================\n`);
+    return result as T;
+  }
+
+  private mapRelationColumns(
+    data: T,
+    columnsData: IncludeJSONWithColumns<T>,
+    result: Record<string, any>,
+  ): Record<string, any> {
+    Object.entries(columnsData).forEach(([key, value]) => {
+      console.log(`key: ${key}`);
+      console.log(`value: ${JSON.stringify(value, null, 2)}`);
+      const { columns, path, alias, ...rest } = value as IncludeValueWithColumns<T, keyof T>;
+      const existingData = get(data, path || key);
+
+      if (existingData) {
+        result[alias || key] = this.processRelationData(
+          existingData,
+          columns as Record<string, boolean | { alias: string }>,
+          rest as unknown as IncludeJSONWithColumns<T>,
+          data,
+        );
+      }
+    });
+    return result;
+  }
+
+  private processRelationData(
+    item: any,
+    columns: Record<string, boolean | { alias: string }>,
+    rest: IncludeJSONWithColumns<T>,
+    parentData: any,
+  ): any {
+    if (!item) return null;
+    // console.log(`\n================ processRelationData ==================\n`);
+    // console.log(`item: ${JSON.stringify(item, null, 2)}`);
+    // console.log(`columns: ${JSON.stringify(columns, null, 2)}`);
+    // console.log(`rest: ${JSON.stringify(rest, null, 2)}`);
+    // console.log(`parentData: ${JSON.stringify(parentData, null, 2)}`);
+    // console.log(`\n================ processRelationData end ==================\n`);
+
+    if (Array.isArray(item)) {
+      // console.log(`item is array`);
+      return item.map((subItem) => this.processRelationData(subItem, columns, rest, parentData));
+    }
+
+    const result: Record<string, any> = {};
+
+    // Add selected columns
+    Object.entries(columns).forEach(([col, value]) => {
+      const realValue = value as boolean | { alias: string };
+      if (item[col] !== undefined) {
+        result[typeof realValue === 'object' ? realValue.alias : col] = item[col];
+      }
+    });
+
+    // Process nested relations
+    if (Object.keys(rest).length > 0) {
+      Object.entries(rest).forEach(([nestedKey, nestedValue]) => {
+        const { columns, path, alias, ...rest } = nestedValue as IncludeValueWithColumns<
+          T,
+          keyof T
+        >;
+        if (item[nestedKey]) {
+          result[alias || nestedKey] = this.processRelationData(
+            item[nestedKey],
+            columns as Record<string, boolean | { alias: string }>,
+            rest as unknown as IncludeJSONWithColumns<T>,
+            item,
+          );
+        }
+      });
+    }
+
+    // If no columns specified but has nested relations, include all properties
+    if (Object.keys(columns).length === 0 && Object.keys(rest).length === 0) {
+      Object.assign(result, item);
+    }
+
+    return result;
+  }
+
+  private filterSelectedRelationColumnsUndefined(columnsData: IncludeJSONWithColumns<T>): void {
+    Object.entries(columnsData).forEach(([key, value]) => {
+      const { columns, path, alias, ...rest } = value as IncludeValueWithColumns<T, keyof T>;
+      if (!columns) {
+        throw new Error(`Columns are undefined for ${key}`);
+      }
+      // Process nested relations
+      if (Object.keys(rest).length > 0) {
+        this.filterSelectedRelationColumnsUndefined(rest as unknown as IncludeJSONWithColumns<T>);
       }
     });
   }

@@ -18,3 +18,17 @@ export type IsRelation<T, K extends keyof T> =
 export type IncludeJSON<T> = {
   [K in keyof T as IsRelation<T, K>]?: boolean | IncludeValue<T, K>;
 };
+
+export type IncludeValueWithColumns<T, K extends keyof T> = {
+  columns: {
+    [U in keyof T[K]]?: boolean | {
+      alias: string;
+    };
+  };
+  path: string;
+  alias: string;
+} & IncludeJSONWithColumns<RelationField<T, K>>;
+
+export type IncludeJSONWithColumns<T> = {
+  [K in keyof T as IsRelation<T, K>]?: IncludeValueWithColumns<T, K>;
+};

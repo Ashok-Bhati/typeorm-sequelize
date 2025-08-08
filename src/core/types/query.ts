@@ -5,13 +5,13 @@ import { SelectJSON } from './select';
 import { PredicateJSON } from './where';
 
 export interface IQueryableWhereResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'where'> {}
-export interface IQueryableSelectResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'select'> {}
+export interface IQueryableSelectResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'select' | 'include'> {}
 export interface IQueryableGroupByResult<T extends ObjectLiteral> extends Pick<IQueryable<T>, | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take' | 'orderBy' | 'orderByDescending'> {}
 export interface IQueryableOrderByResult<T extends ObjectLiteral> extends Omit<IQueryableGroupByResult<T>, 'orderBy' | 'orderByDescending'> {}
 export type SingleResult<T extends ObjectLiteral> = Partial<T>;
 export type SingleResultOrNull<T extends ObjectLiteral> = Partial<T> | null;
 export type ListResult<T extends ObjectLiteral> = Partial<T>[];
-export type Relations = Record<string, EntityMetadata>;
+export interface IQueryableRelationResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'include'> {}
 
 /**
  * Represents a queryable collection of entities
@@ -36,7 +36,7 @@ export interface IQueryable<T extends ObjectLiteral> {
   groupBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K): IGroupedQueryable<T>;
 
   // Loading Related Data
-  include(keySelector: IncludeJSON<T>): IQueryable<T>;
+  include(keySelector: IncludeJSON<T>): IQueryableRelationResult<T>;
   asNoTracking(): IQueryable<T>;
 
   // Set Operations
