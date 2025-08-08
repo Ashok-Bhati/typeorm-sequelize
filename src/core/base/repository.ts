@@ -1,33 +1,18 @@
 import { stringify } from 'flatted';
 import jsep from 'jsep';
 import { cloneDeep, map, set } from 'lodash';
-import {
-  DeepPartial,
-  EntityMetadata,
-  ObjectLiteral,
-  RemoveOptions,
-  Repository,
-  SaveOptions,
-  SelectQueryBuilder,
-} from 'typeorm';
+import { get } from 'lodash'
+import { DeepPartial, EntityMetadata, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder } from 'typeorm';
 import { RelationMetadata } from 'typeorm/metadata/RelationMetadata';
 
 import { EntityType } from '../types/entity';
 import { IncludeJSON, IncludeJSONWithColumns, IncludeValue, IncludeValueWithColumns } from '../types/include';
 import { QueryBuilderOptions } from '../types/options';
-import {
-  ExpressionParseResult,
-  IGroupedQueryable,
-  IOrderedQueryable,
-  IQueryable,
-  IQueryableRelationResult,
-  QueryOptions,
-} from '../types/query';
-import { SelectJSON, ScalarSelectorValue } from '../types/select';
+import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, IQueryableRelationResult, QueryOptions } from '../types/query';
+import { ScalarSelectorValue, SelectJSON } from '../types/select';
 import { FieldComparison, PredicateJSON } from '../types/where';
-import { DbContext } from './context';
 import { deepClone } from '../utils';
-import { get } from 'lodash'
+import { DbContext } from './context';
 
 /**
  * Base repository class implementing IQueryable interface
@@ -433,7 +418,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         const { as, include } = realValue;
         const relationAlias = as || `${parentAlias}_${key}`;
         console.log(`relationAlias: ${relationAlias}`);
-        this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
+        this.relationAliases[propertyPath] = { alias: as || key, path: propertyPath };
         this.queryBuilder.leftJoinAndSelect(column, relationAlias);
         console.log(`expressionMapAliases: ${stringify(this.queryBuilder.expressionMap.aliases)}`);
         if (include) {
@@ -441,7 +426,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         }
       } else {
         const relationAlias = `${parentAlias}_${key}`;
-        this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
+        this.relationAliases[propertyPath] = { alias: key, path: propertyPath };
         this.queryBuilder.leftJoinAndSelect(column, relationAlias);
       }
     });
