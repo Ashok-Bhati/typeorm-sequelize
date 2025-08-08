@@ -327,7 +327,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
       if (typeof value === 'object') {
         if (value !== null && 'as' in value) {
           console.log(`value is object and has as alias`);
-          set(this.selectedColumns, key, { alias: (value as ScalarSelectorValue<U, keyof U>).as });
+          set(this.selectedColumns, key, { alias: (value as ScalarSelectorValue<U>).as });
         } else {
           console.log(`value is object and does not have as alias`);
           console.log(`this.relationAliases: ${JSON.stringify(this.relationAliases, null, 2)}`);
