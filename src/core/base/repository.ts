@@ -73,15 +73,10 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   }
 
   where(predicate: PredicateJSON<T>): IQueryableWhereResult<T> {
-    console.log(`\n================ where ==================\n`);
-    console.log(`predicate: ${JSON.stringify(predicate, null, 2)}`);
     const alias = this.queryBuilder.alias;
     const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
-    console.log(`whereClause: ${whereClause}`);
-    console.log(`params: ${JSON.stringify(params, null, 2)}`);
     
     this.queryBuilder.where(whereClause, params);
-    console.log(`\n================ where end ==================\n`);
     return this as unknown as IQueryableWhereResult<T>;
   }
 
@@ -217,21 +212,10 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     let index = 0;
 
     const walkField = (field: string, conditions: FieldComparison, currentAlias: string): string => {
-      console.log(`\n================ walkField ==================\n`);
-      console.log(`field: ${field}`);
-      console.log(`conditions: ${JSON.stringify(conditions, null, 2)}`);
-      console.log(`currentAlias: ${currentAlias}`);
       return Object.entries(conditions)
         .map(([op, value], idx) => {
-          console.log(`op: ${op}`);
-          console.log(`value: ${JSON.stringify(value, null, 2)}`);
           const paramKey = `${field}_${index++}`;
           const column = `${currentAlias}.${field}`;
-          console.log(`paramKey: ${paramKey}`);
-          console.log(`column: ${column}`);
-          if(idx === Object.entries(conditions).length - 1){
-            console.log(`\n================ walkField end ==================\n`);
-          }
           
           switch (op) {
             case '$eq':
@@ -301,31 +285,24 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
 
     const walk = (expr: PredicateJSON<T>, currentAlias: string = alias, path: string = ''): string => {
       if ('$and' in expr) {
-        console.log(`expr is $and`);
         return `(${(expr.$and as any[]).map(e => walk(e, currentAlias, path)).join(' AND ')})`;
       }
       if ('$or' in expr) {
-        console.log(`expr is $or`);
         return `(${(expr.$or as any[]).map(e => walk(e, currentAlias, path)).join(' OR ')})`;
       }
 
       return Object.entries(expr)
         .map(([field, conditions]) => {
-          console.log(`field: ${field}`);
-          console.log(`conditions: ${JSON.stringify(conditions, null, 2)}`);
           // Check if this is a relation path
           const fullPath = path ? `${path}.${field}` : field;
-          console.log(`fullPath: ${fullPath}`);
           
           // If conditions is an object but not a FieldComparison, it's a relation
           if (typeof conditions === 'object' && 
               conditions !== null && 
               !Object.keys(conditions).some(key => key.startsWith('$'))) {
-            console.log(`conditions is an object and not a FieldComparison`);
             
             // Get or create relation alias
             let relationAlias = this.relationAliases[fullPath];
-            console.log(`relationAlias: ${JSON.stringify(relationAlias, null, 2)}`);
             if (!relationAlias) {
               throw new Error(`Relation not loaded: ${fullPath}`);
             }
@@ -356,10 +333,21 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
       let relationPath = `${relationKey ? `${relationKey}.${key}` : key}`;
       const alias = `${parentAlias}_${key}`;
 
-
       if (typeof value === 'object') {
         if (value !== null && 'as' in value) {
-          set(this.selectedColumns, key, { alias: (value as ScalarSelectorValue<U>).as });
+          if(relationKey){
+            const existingAlias = get(this.selectedRelationColumns, relationKey);
+            const newAlias = {
+              ...(existingAlias ? existingAlias : {}),
+              columns: {
+                ...(existingAlias ? existingAlias.columns : {}),
+                [key]: { alias: (value as ScalarSelectorValue<U>).as }
+              }
+            }
+            set(this.selectedRelationColumns, relationKey, newAlias);
+          } else {
+            set(this.selectedColumns, key, { alias: (value as ScalarSelectorValue<U>).as });
+          }
         } else {
           const relationAlias = this.relationAliases[relationPath];
           if(!relationAlias){
