@@ -4,8 +4,8 @@ import { IncludeJSON } from './include';
 import { SelectJSON } from './select';
 import { PredicateJSON } from './where';
 
-export interface IQueryableWhereResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'where'> {}
 export interface IQueryableSelectResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'select' | 'include'> {}
+export interface IQueryableWhereResult<T extends ObjectLiteral> extends Omit<IQueryableSelectResult<T>, 'where'> {}
 export interface IQueryableGroupByResult<T extends ObjectLiteral> extends Pick<IQueryable<T>, | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take' | 'orderBy' | 'orderByDescending'> {}
 export interface IQueryableOrderByResult<T extends ObjectLiteral> extends Omit<IQueryableGroupByResult<T>, 'orderBy' | 'orderByDescending'> {}
 export type SingleResult<T extends ObjectLiteral> = Partial<T>;
