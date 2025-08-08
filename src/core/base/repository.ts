@@ -447,19 +447,6 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     });
   }
 
-  private selectColumn(path: string, alias: string, isFirst: boolean = false): void {
-    console.log(`\n================ selectColumn ==================\n`);
-    console.log(`path: ${path}`);
-    console.log(`alias: ${alias}`);
-    console.log(`isFirst: ${isFirst}`);
-    // if (isFirst) {
-    //   this.queryBuilder.select(path, alias);
-    // } else {
-    this.queryBuilder.addSelect(path, alias);
-    // }
-    console.log(`\n================ selectColumn end ==================\n`);
-  }
-
   private filterSelectedColumns(data: T): T {
     // console.log(`\n================ filterSelectedColumns ==================\n`);
     // console.log(`data: ${JSON.stringify(data, null, 2)}`);
