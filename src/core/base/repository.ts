@@ -10,7 +10,7 @@ import { IncludeJSON, IncludeJSONWithColumns, IncludeValue, IncludeValueWithColu
 import { QueryBuilderOptions } from '../types/options';
 import { ExpressionParseResult, IGroupedQueryable, IOrderedQueryable, IQueryable, IQueryableRelationResult, IQueryableSelectResult, IQueryableWhereResult, ListResult, QueryOptions, SingleResult, SingleResultOrNull } from '../types/query';
 import { ScalarSelectorValue, SelectJSON } from '../types/select';
-import { FieldComparison, PredicateJSON } from '../types/where';
+import { AndCondition, FieldComparison, Fields, PredicateJSON } from '../types/where';
 import { deepClone } from '../utils';
 import { DbContext } from './context';
 
@@ -218,6 +218,11 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
           const column = `${currentAlias}.${field}`;
           
           switch (op) {
+            case '$or':
+              // Handle nested $or within field comparison
+              return `(${(value as FieldComparison[])
+                .map(condition => walkField(field, condition, currentAlias))
+                .join(' OR ')})`;
             case '$eq':
               params[paramKey] = value;
               return `${column} = :${paramKey}`;
@@ -284,24 +289,34 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     };
 
     const walk = (expr: PredicateJSON<T>, currentAlias: string = alias, path: string = ''): string => {
-      if ('$and' in expr) {
-        return `(${(expr.$and as any[]).map(e => walk(e, currentAlias, path)).join(' AND ')})`;
+      console.log(`expr: ${JSON.stringify(expr, null, 2)}`);
+      if ('$or' in expr && expr.$or) {
+        return `(${(expr.$or as PredicateJSON<T>[])
+          .map((condition) => walk(condition as PredicateJSON<T>, currentAlias, path))
+          .join(' OR ')})`;
       }
-      if ('$or' in expr) {
-        return `(${(expr.$or as any[]).map(e => walk(e, currentAlias, path)).join(' OR ')})`;
+
+      if ('$and' in expr && expr.$and) {
+        return `(${(expr.$and as PredicateJSON<T>[])
+          .map((condition) => walk(condition as PredicateJSON<T>, currentAlias, path))
+          .join(' AND ')})`;
       }
 
       return Object.entries(expr)
         .map(([field, conditions]) => {
           // Check if this is a relation path
           const fullPath = path ? `${path}.${field}` : field;
+          console.log(`fullPath: ${fullPath}`);
           
           // If conditions is an object but not a FieldComparison, it's a relation
           if (typeof conditions === 'object' && 
               conditions !== null && 
               !Object.keys(conditions).some(key => key.startsWith('$'))) {
+                console.log(`expr: ${JSON.stringify(expr)}`);
+              console.log(`conditions: ${JSON.stringify(conditions)}`);
             
             // Get or create relation alias
+            console.log(`this.relationAliases: ${JSON.stringify(this.relationAliases, null, 2)}`);
             let relationAlias = this.relationAliases[fullPath];
             if (!relationAlias) {
               throw new Error(`Relation not loaded: ${fullPath}`);
