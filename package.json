@@ -1,7 +1,7 @@
 {
-  "name": "ef-core-typeorm",
+  "name": "typeorm-sequelize",
   "version": "1.0.0",
-  "description": "Entity Framework Core-like query interface for TypeORM",
+  "description": "Sequelize-like query interface for TypeORM",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "",
