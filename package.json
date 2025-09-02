@@ -4,7 +4,7 @@
   "description": "Sequelize-like query interface for TypeORM",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "author": "",
+  "author": "Maharaja",
   "license": "MIT",
   "packageManager": "yarn@4.9.2",
   "files": [
@@ -21,7 +21,7 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "clean": "rimraf dist",
     "postinstall": "husky",
-    "prepublishOnly": "yarn clean && yarn build"
+    "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
     "express": "^5.1.0",
@@ -63,12 +63,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/ef-core-typeorm.git"
+    "url": "git+https://github.com/Ashok-Bhati/typeorm-sequelize.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/ef-core-typeorm/issues"
+    "url": "https://github.com/Ashok-Bhati/typeorm-sequelize/issues"
   },
-  "homepage": "https://github.com/yourusername/ef-core-typeorm#readme",
+  "homepage": "https://github.com/Ashok-Bhati/typeorm-sequelize#readme",
   "lint-staged": {
     "*.ts": [
       "eslint --fix",
