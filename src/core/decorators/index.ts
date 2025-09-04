@@ -18,7 +18,6 @@ export class EntityRegistry {
 /**
  * Enhanced Entity decorator with additional tracking capabilities
  */
-export function Entity(): ClassDecorator;
 export function Entity(name?: string): ClassDecorator {
   return (target: any) => {
     EntityRegistry.registerEntity(target);
