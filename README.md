@@ -1,6 +1,6 @@
 # EF Core-Style TypeORM Wrapper
 
-A TypeScript ORM that provides Entity Framework Core-like syntax and features on top of TypeORM.
+A TypeScript ORM that provides Entity Framework Core-like syntax and features on top of TypeORM, with support for Express.js and NestJS.
 
 ## Features
 
@@ -8,17 +8,22 @@ A TypeScript ORM that provides Entity Framework Core-like syntax and features on
 - Enhanced entity tracking
 - Simplified relationship management
 - Express.js integration
+- **NestJS module support**
 - Transaction management
 - Type-safe queries
+- Dependency injection support
 
 ## Installation
 
 ```bash
 # Using npm
-npm install ef-core-typeorm
+npm install typeorm-sequelize
 
 # Using yarn
-yarn add ef-core-typeorm
+yarn add typeorm-sequelize
+
+# Using pnpm
+pnpm add typeorm-sequelize
 ```
 
 ## Building from Source
@@ -168,6 +173,134 @@ yarn add ef-core-typeorm
 import { DbContext, Entity, Column } from 'ef-core-typeorm';
 
 // Set up entities and context as shown above
+```
+
+## NestJS Integration
+
+### Setup
+
+```typescript
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { TypeormSequelizeModule } from 'typeorm-sequelize';
+import { User, Post, Comment } from './entities';
+
+@Module({
+  imports: [
+    TypeormSequelizeModule.forRoot({
+      host: 'localhost',
+      port: 5432,
+      username: 'postgres',
+      password: 'password',
+      database: 'myapp',
+      entities: [User, Post, Comment],
+      synchronize: true, // Only for development
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### Async Configuration
+
+```typescript
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeormSequelizeModule } from 'typeorm-sequelize';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot(),
+    TypeormSequelizeModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        host: configService.get('DB_HOST'),
+        port: configService.get('DB_PORT'),
+        username: configService.get('DB_USERNAME'),
+        password: configService.get('DB_PASSWORD'),
+        database: configService.get('DB_NAME'),
+        entities: [User, Post, Comment],
+        synchronize: configService.get('NODE_ENV') === 'development',
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### Service Implementation
+
+```typescript
+// users/users.service.ts
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from 'typeorm-sequelize';
+import { BaseRepository } from 'typeorm-sequelize';
+import { User } from './entities/user.entity';
+
+@Injectable()
+export class UsersService {
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: BaseRepository<User>,
+  ) {}
+
+  async findAll() {
+    return this.userRepository
+      .select({
+        id: true,
+        name: true,
+        email: true,
+        posts: {
+          id: true,
+          title: true,
+        }
+      })
+      .include({
+        posts: true
+      })
+      .toList();
+  }
+
+  async findByEmail(email: string) {
+    return this.userRepository
+      .where({ email: { $eq: email } })
+      .firstOrDefault();
+  }
+
+  async create(userData: Partial<User>) {
+    const user = this.userRepository.create(userData);
+    return this.userRepository.save(user);
+  }
+}
+```
+
+### Controller Implementation
+
+```typescript
+// users/users.controller.ts
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { UsersService } from './users.service';
+
+@Controller('users')
+export class UsersController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Get()
+  async findAll() {
+    return this.usersService.findAll();
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: number) {
+    return this.usersService.findById(id);
+  }
+
+  @Post()
+  async create(@Body() createUserDto: any) {
+    return this.usersService.create(createUserDto);
+  }
+}
 ```
 
 ## Development

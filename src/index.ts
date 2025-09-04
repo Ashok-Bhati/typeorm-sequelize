@@ -17,4 +17,7 @@ export * from './relations/handlers';
 export * from './transactions/manager';
 
 // Re-export express middleware
-export * from './express/middleware'; 
+export * from './express/middleware';
+
+// Re-export NestJS functionality
+export * from './nestjs'; 

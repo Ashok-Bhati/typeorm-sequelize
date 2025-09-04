@@ -1,7 +1,7 @@
 {
   "name": "typeorm-sequelize",
-  "version": "1.0.2",
-  "description": "Sequelize-like query interface for TypeORM",
+  "version": "1.1.0",
+  "description": "Entity Framework Core-like query interface for TypeORM with Express and NestJS support",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Maharaja",
@@ -24,16 +24,22 @@
     "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
     "express": "^5.1.0",
     "flatted": "^3.3.3",
     "jsep": "^1.4.0",
     "lodash": "^4.17.21",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
     "typeorm": "^0.3.25"
   },
   "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
     "express": "^5.1.0",
+    "rxjs": "^7.0.0",
     "typeorm": "^0.3.25"
   },
   "devDependencies": {
@@ -59,7 +65,10 @@
     "typescript",
     "entity-framework",
     "database",
-    "postgres"
+    "postgres",
+    "nestjs",
+    "express",
+    "ef-core"
   ],
   "repository": {
     "type": "git",
