@@ -2,7 +2,7 @@ import { stringify } from 'flatted';
 import jsep from 'jsep';
 import { cloneDeep, map, set } from 'lodash';
 import { get } from 'lodash'
-import { DeepPartial, EntityMetadata, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder } from 'typeorm';
+import { DeleteResult, EntityMetadata, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder, UpdateResult } from 'typeorm';
 import { RelationMetadata } from 'typeorm/metadata/RelationMetadata';
 
 import { EntityType } from '../types/entity';
@@ -36,6 +36,26 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     this.options = {};
     this.metadata = this.repository.metadata;
   }
+
+  //#region Repository Methods
+
+  async create(entity: T): Promise<T> {
+    return this.repository.create(entity);
+  }
+
+  async save(entity: T, options: SaveOptions): Promise<T> {
+    return await this.repository.save(entity, options);
+  }
+  
+  async update(id: string, entity: Partial<T>): Promise<UpdateResult> {
+    return await this.repository.update(id, entity);
+  }
+
+  async delete(id: string): Promise<DeleteResult> {
+    return await this.repository.delete(id);
+  }
+
+  //#endregion
 
   //#region IQueryable implementation
 
