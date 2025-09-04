@@ -1,4 +1,5 @@
-import { Entity as TypeORMEntity, Column as TypeORMColumn, PrimaryGeneratedColumn as TypeORMPrimaryGeneratedColumn } from 'typeorm';
+import { AfterInsert as TypeORMAfterInsert, AfterLoad as TypeORMAfterLoad, AfterRecover as TypeORMAfterRecover, AfterRemove as TypeORMAfterRemove, AfterSoftRemove as TypeORMAfterSoftRemove, AfterUpdate as TypeORMAfterUpdate, BeforeInsert as TypeORMBeforeInsert, BeforeRecover as TypeORMBeforeRecover, BeforeRemove as TypeORMBeforeRemove, BeforeSoftRemove as TypeORMBeforeSoftRemove, BeforeUpdate as TypeORMBeforeUpdate, Column as TypeORMColumn, CreateDateColumn as TypeORMCreateDateColumn, DeleteDateColumn as TypeORMDeleteDateColumn, Entity as TypeORMEntity, ForeignKey as TypeORMForeignKey, JoinColumn as TypeORMJoinColumn, JoinTable as TypeORMJoinTable, ManyToMany as TypeORMManyToMany, ManyToOne as TypeORMManyToOne, OneToMany as TypeORMOneToMany, OneToOne as TypeORMOneToOne, PrimaryGeneratedColumn as TypeORMPrimaryGeneratedColumn, UpdateDateColumn as TypeORMUpdateDateColumn } from 'typeorm';
+
 import { BaseRepository } from '../base/repository';
 
 // Registry to store entity metadata
@@ -28,9 +29,31 @@ export function Entity(name?: string): ClassDecorator {
 /**
  * Enhanced Column decorator with additional validation
  */
-export const Column = TypeORMColumn; 
+export const Column = TypeORMColumn;
 
 export const PrimaryGeneratedColumn = TypeORMPrimaryGeneratedColumn;
+
+export const AfterInsert = TypeORMAfterInsert;
+export const AfterUpdate = TypeORMAfterUpdate;
+export const BeforeInsert = TypeORMBeforeInsert;
+export const BeforeUpdate = TypeORMBeforeUpdate;
+export const AfterLoad = TypeORMAfterLoad;
+export const BeforeRemove = TypeORMBeforeRemove;
+export const AfterRemove = TypeORMAfterRemove;
+export const AfterSoftRemove = TypeORMAfterSoftRemove;
+export const BeforeSoftRemove = TypeORMBeforeSoftRemove;
+export const BeforeRecover = TypeORMBeforeRecover;
+export const AfterRecover = TypeORMAfterRecover;
+export const CreateDateColumn = TypeORMCreateDateColumn;
+export const DeleteDateColumn = TypeORMDeleteDateColumn;
+export const ForeignKey = TypeORMForeignKey;
+export const JoinColumn = TypeORMJoinColumn;
+export const JoinTable = TypeORMJoinTable;
+export const ManyToMany = TypeORMManyToMany;
+export const ManyToOne = TypeORMManyToOne;
+export const OneToMany = TypeORMOneToMany;
+export const OneToOne = TypeORMOneToOne;
+export const UpdateDateColumn = TypeORMUpdateDateColumn;
 
 // Registry to store repository metadata
 export class RepositoryRegistry {
@@ -61,4 +84,3 @@ export function Repository(name?: string): ClassDecorator {
     return target;
   };
 }
-
