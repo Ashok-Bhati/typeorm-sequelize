@@ -1,5 +1,5 @@
 import { DynamicModule, Global, Module, Provider } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
+import { ModuleRef, DiscoveryService } from '@nestjs/core';
 
 import { DbContext } from '../core/base/context';
 import { BaseRepository } from '../core/base/repository';
@@ -7,7 +7,7 @@ import { EntityRegistry } from '../core/decorators';
 import { DbContextOptions, EntityType } from '../core/types';
 
 export interface TypeormSequelizeModuleOptions extends Omit<DbContextOptions, 'entities'> {
-  entities?: EntityType<any>[];
+  entities?: (EntityType<any> | string)[];
   global?: boolean;
 }
 
@@ -23,6 +23,9 @@ const DB_CONTEXT_OPTIONS_TOKEN = 'DB_CONTEXT_OPTIONS';
 @Global()
 @Module({})
 export class TypeormSequelizeModule {
+  private static registeredEntities = new Set<EntityType<any>>();
+  private static dbContext: DbContext | null = null;
+  
   constructor(private readonly moduleRef: ModuleRef) {}
 
   static forRoot(options: TypeormSequelizeModuleOptions): DynamicModule {
@@ -65,6 +68,10 @@ export class TypeormSequelizeModule {
           entities: config.entities || [],
         });
         await context.initialize();
+        
+        // Store the DbContext for later use
+        TypeormSequelizeModule.dbContext = context;
+        
         return context;
       },
       inject: options.inject || [],
@@ -76,27 +83,37 @@ export class TypeormSequelizeModule {
       inject: options.inject || [],
     };
 
+    // Create dynamic repository providers for registered entities
+    const dynamicRepositoryProviders = this.createDynamicRepositoryProviders();
+
     return {
       module: TypeormSequelizeModule,
       providers: [
         asyncOptionsProvider,
         dbContextProvider,
-        {
-          provide: 'REPOSITORY_PROVIDERS',
-          useFactory: (dbOptions: TypeormSequelizeModuleOptions) => {
-            return this.createRepositoryProviders(dbOptions.entities || []);
-          },
-          inject: [DB_CONTEXT_OPTIONS_TOKEN],
-        },
+        ...dynamicRepositoryProviders,
       ],
-      exports: [DB_CONTEXT_TOKEN, 'REPOSITORY_PROVIDERS'],
+      exports: [DB_CONTEXT_TOKEN, ...dynamicRepositoryProviders],
       global: options.global ?? true,
     };
   }
 
-  private static createRepositoryProviders(entities: EntityType<any>[]): Provider[] {
+  /**
+   * Registers an entity that needs a repository provider
+   */
+  static registerRepositoryEntity(entity: EntityType<any>): void {
+    this.registeredEntities.add(entity);
+  }
+
+  private static createRepositoryProviders(entities: (EntityType<any> | string)[]): Provider[] {
     const registeredEntities = EntityRegistry.getRegisteredEntities();
-    const allEntities = [...entities, ...registeredEntities];
+    
+    // Only create providers for entity constructors (not string paths)
+    const entityConstructors = entities.filter((entity): entity is EntityType<any> => 
+      typeof entity === 'function'
+    );
+    
+    const allEntities = [...entityConstructors, ...registeredEntities];
 
     return allEntities.map((entity) => ({
       provide: this.getRepositoryToken(entity),
@@ -110,5 +127,57 @@ export class TypeormSequelizeModule {
   static getRepositoryToken(entity: EntityType<any> | Function): string {
     const name = entity.name;
     return `${name}Repository`;
+  }
+
+  /**
+   * Creates dynamic repository providers that work with any entity
+   */
+  private static createDynamicRepositoryProviders(): Provider[] {
+    const providers: Provider[] = [];
+    
+    // Create providers for all registered entities
+    for (const entity of this.registeredEntities) {
+      const token = this.getRepositoryToken(entity);
+      providers.push({
+        provide: token,
+        useFactory: (dbContext: DbContext) => {
+          try {
+            return dbContext.getRepositoryByName(entity.name);
+          } catch (error) {
+            // Return a proxy that throws a helpful error when methods are called
+            return new Proxy({}, {
+              get: () => {
+                throw new Error(
+                  `Entity '${entity.name}' not found in DbContext. ` +
+                  `Make sure it's included in your entities configuration and the entity file is properly decorated with @Entity().`
+                );
+              }
+            });
+          }
+        },
+        inject: [DB_CONTEXT_TOKEN],
+      });
+    }
+    
+    // Also create a fallback universal provider for any unregistered entities
+    providers.push({
+      provide: 'FALLBACK_REPOSITORY_PROVIDER',
+      useFactory: (dbContext: DbContext) => {
+        return (entityName: string) => {
+          try {
+            return dbContext.getRepositoryByName(entityName);
+          } catch (error) {
+            throw new Error(
+              `Entity '${entityName}' not found. Available entities: ${
+                dbContext.getDataSource().entityMetadatas.map(m => m.name).join(', ')
+              }`
+            );
+          }
+        };
+      },
+      inject: [DB_CONTEXT_TOKEN],
+    });
+    
+    return providers;
   }
 }

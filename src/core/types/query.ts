@@ -8,9 +8,9 @@ export interface IQueryableSelectResult<T extends ObjectLiteral> extends Omit<IQ
 export interface IQueryableWhereResult<T extends ObjectLiteral> extends Omit<IQueryableSelectResult<T>, 'where'> {}
 export interface IQueryableGroupByResult<T extends ObjectLiteral> extends Pick<IQueryable<T>, | 'toList' | 'first' | 'firstOrDefault' | 'single' | 'singleOrDefault' | 'skip' | 'take' | 'orderBy' | 'orderByDescending'> {}
 export interface IQueryableOrderByResult<T extends ObjectLiteral> extends Omit<IQueryableGroupByResult<T>, 'orderBy' | 'orderByDescending'> {}
-export type SingleResult<T extends ObjectLiteral> = Partial<T>;
-export type SingleResultOrNull<T extends ObjectLiteral> = Partial<T> | null;
-export type ListResult<T extends ObjectLiteral> = Partial<T>[];
+export type SingleResult<T extends ObjectLiteral> = T;
+export type SingleResultOrNull<T extends ObjectLiteral> = T | null;
+export type ListResult<T extends ObjectLiteral> = T[];
 export interface IQueryableRelationResult<T extends ObjectLiteral> extends Omit<IQueryable<T>, 'include'> {}
 
 /**
@@ -46,6 +46,12 @@ export interface IQueryable<T extends ObjectLiteral> {
   union(other: IQueryable<T>): IQueryable<T>;
   intersect(other: IQueryable<T>): IQueryable<T>;
   except(other: IQueryable<T>): IQueryable<T>;
+
+  // Find Methods
+  find(id: number): Promise<SingleResult<T>>;
+  findOrDefault(id: number): Promise<SingleResultOrNull<T>>;
+  findBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K, value: T[K]): Promise<SingleResult<T>>;
+  findByOrDefault<K extends keyof T>(keySelector: T[K] extends Function ? never : K, value: T[K]): Promise<SingleResultOrNull<T>>;
 }
 
 /**

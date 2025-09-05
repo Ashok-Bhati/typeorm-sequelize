@@ -28,7 +28,7 @@ export interface DbContextOptions<T extends RepositoryRegistration = {}> {
   username?: string;
   password?: string;
   database: string;
-  entities: EntityType<ObjectLiteral>[];
+  entities: (EntityType<ObjectLiteral> | string)[];
   synchronize?: boolean;
 
   // Repository registration

@@ -9,7 +9,12 @@ import { TypeormSequelizeModule } from './typeorm-sequelize.module';
  * @returns Parameter decorator for dependency injection
  */
 export function InjectRepository(entity: EntityType<any>): ParameterDecorator {
-  return Inject(TypeormSequelizeModule.getRepositoryToken(entity));
+  const token = TypeormSequelizeModule.getRepositoryToken(entity);
+  
+  // Register this entity as needing a repository provider
+  TypeormSequelizeModule.registerRepositoryEntity(entity);
+  
+  return Inject(token);
 }
 
 /**

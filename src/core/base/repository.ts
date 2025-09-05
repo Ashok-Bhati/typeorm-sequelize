@@ -2,7 +2,7 @@ import { stringify } from 'flatted';
 import jsep from 'jsep';
 import { cloneDeep, map, set } from 'lodash';
 import { get } from 'lodash'
-import { DeleteResult, EntityMetadata, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder, UpdateResult } from 'typeorm';
+import { DeepPartial, DeleteResult, EntityMetadata, FindOptionsWhere, FindOptionsWhereProperty, ObjectLiteral, RemoveOptions, Repository, SaveOptions, SelectQueryBuilder, UpdateResult } from 'typeorm';
 import { RelationMetadata } from 'typeorm/metadata/RelationMetadata';
 
 import { EntityType } from '../types/entity';
@@ -39,20 +39,122 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
 
   //#region Repository Methods
 
-  async create(entity: T): Promise<T> {
-    return this.repository.create(entity);
+  async create(entity: DeepPartial<T>): Promise<T> {
+    const result = this.repository.create(entity);
+    return this.repository.save(result);
   }
 
-  async save(entity: T, options: SaveOptions): Promise<T> {
+  async save(entity: DeepPartial<T>, options: SaveOptions): Promise<T> {
     return await this.repository.save(entity, options);
   }
   
-  async update(id: string, entity: Partial<T>): Promise<UpdateResult> {
+  async update(id: number, entity: Partial<T>): Promise<UpdateResult> {
     return await this.repository.update(id, entity);
   }
 
-  async delete(id: string): Promise<DeleteResult> {
+  async delete(id: number): Promise<DeleteResult> {
     return await this.repository.delete(id);
+  }
+
+  async createMany(entities: DeepPartial<T>[]): Promise<T[]> {
+    const result = this.repository.create(entities);
+    return this.repository.save(result);
+  }
+
+  async deleteBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K, value: T[K]): Promise<DeleteResult>;
+  async deleteBy(keySelector: string, value: any): Promise<DeleteResult>;
+  async deleteBy<K extends keyof T>(keySelector: (T[K] extends Function ? never : K) | string, value: T[K] | any): Promise<DeleteResult> {
+    // Handle nested property paths (e.g., "user.email", "post.author.name")
+    if (typeof keySelector === 'string' && keySelector.includes('.')) {
+      return this.deleteByNestedProperty(keySelector, value);
+    }
+
+    // Handle simple property access
+    return this.repository.delete({ 
+      [keySelector]: value 
+    } as FindOptionsWhere<T>);
+  }
+
+  async deleteByOrDefault<K extends keyof T>(keySelector: T[K] extends Function ? never : K, value: T[K]): Promise<DeleteResult | null>;
+  async deleteByOrDefault(keySelector: string, value: any): Promise<DeleteResult | null>;
+  async deleteByOrDefault<K extends keyof T>(keySelector: (T[K] extends Function ? never : K) | string, value: T[K] | any): Promise<DeleteResult | null> {
+    try {
+      return await this.deleteBy(keySelector as any, value);
+    } catch (error) {
+      // If no entities found to delete, return null instead of throwing
+      if (error instanceof Error && error.message.includes('No entity found')) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async deleteByNestedProperty(propertyPath: string, value: any): Promise<DeleteResult> {
+    const pathParts = propertyPath.split('.');
+    console.log(`[DELETE] pathParts: ${pathParts}`);
+    const alias = this.queryBuilder.alias;
+    console.log(`[DELETE] alias: ${alias}`);
+    
+    // Create a new query builder for the delete operation
+    const deleteBuilder = this.repository.createQueryBuilder(alias);
+    
+    // Build joins for nested properties
+    let currentAlias = alias;
+    let currentMetadata = this.metadata;
+    console.log(`[DELETE] Starting with entity: ${currentMetadata.name}`);
+    console.log(`[DELETE] currentAlias: ${currentAlias}`);
+    
+    for (let i = 0; i < pathParts.length - 1; i++) {
+      console.log(`\n[DELETE] --- Processing path part ${i + 1}/${pathParts.length - 1} ---`);
+      const part = pathParts[i];
+      console.log(`[DELETE] part: ${part}`);
+      console.log(`[DELETE] Looking for relation '${part}' in entity '${currentMetadata.name}'`);
+      
+      const joinAlias = `${alias}_${pathParts.slice(0, i + 1).join('_')}`;
+      console.log(`[DELETE] joinAlias: ${joinAlias}`);
+      
+      // Check if this relation exists in the current entity's metadata
+      const relation = currentMetadata.relations.find(r => r.propertyName === part);
+      console.log(`[DELETE] Available relations in '${currentMetadata.name}':`, 
+        currentMetadata.relations.map(r => r.propertyName).join(', '));
+      console.log(`[DELETE] Found relation:`, relation ? `${relation.propertyName} -> ${relation.type}` : 'None');
+      
+      if (!relation) {
+        throw new Error(
+          `Relation '${part}' not found in entity '${currentMetadata.name}'. ` +
+          `Available relations: ${currentMetadata.relations.map(r => r.propertyName).join(', ')}`
+        );
+      }
+      
+      // Join the relation
+      deleteBuilder.leftJoin(`${currentAlias}.${part}`, joinAlias);
+      currentAlias = joinAlias;
+      console.log(`[DELETE] Added join: ${currentAlias}.${part} AS ${joinAlias}`);
+      
+      // Update current metadata to the target entity of this relation
+      const targetEntity = relation.inverseEntityMetadata || relation.entityMetadata;
+      if (targetEntity) {
+        currentMetadata = targetEntity;
+        console.log(`[DELETE] Moving to target entity: ${currentMetadata.name}`);
+      } else {
+        console.warn(`[DELETE] Could not determine target entity for relation '${part}'. Continuing with current metadata.`);
+      }
+    }
+    
+    // Add condition for the final property
+    const finalProperty = pathParts[pathParts.length - 1];
+    console.log(`\n[DELETE] --- Final property ---`);
+    console.log(`[DELETE] finalProperty: ${finalProperty}`);
+    console.log(`[DELETE] Final entity: ${currentMetadata.name}`);
+    console.log(`[DELETE] Final alias: ${currentAlias}`);
+    
+    const condition = `${currentAlias}.${finalProperty} = :deleteByValue`;
+    console.log(`[DELETE] condition: ${condition}`);
+    
+    deleteBuilder.where(condition, { deleteByValue: value });
+    
+    // Execute the delete operation
+    return deleteBuilder.delete().execute();
   }
 
   //#endregion
@@ -224,6 +326,112 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   }
 
   //#endregion
+
+  //#region Find Methods
+
+  async find(id: number): Promise<SingleResult<T>> {
+    const result = await this.repository.findOne({
+      where: { id: id as FindOptionsWhereProperty<T, T[keyof T]> }
+    });
+    if (!result) {
+      throw new Error('No entity found');
+    }
+    return result;
+  }
+
+  async findOrDefault(id: number): Promise<SingleResultOrNull<T>> {
+    return this.repository.findOne({
+      where: { id: id as FindOptionsWhereProperty<T, T[keyof T]> }
+    });
+  }
+  async findBy<K extends keyof T>(keySelector: T[K] extends Function ? never : K, value: T[K]): Promise<SingleResult<T>>;
+  async findBy(keySelector: string, value: any): Promise<SingleResult<T>>;
+  async findBy<K extends keyof T>(keySelector: (T[K] extends Function ? never : K) | string, value: T[K] | any): Promise<SingleResult<T>> {
+    const result = await this.findByOrDefault(keySelector as any, value);
+    if (!result) {
+      throw new Error('No entity found');
+    }
+    return result;
+  }
+
+  async findByOrDefault<K extends keyof T>(keySelector: T[K] extends Function ? never : K, value: T[K]): Promise<SingleResultOrNull<T>>;
+  async findByOrDefault(keySelector: string, value: any): Promise<SingleResultOrNull<T>>;
+  async findByOrDefault<K extends keyof T>(keySelector: (T[K] extends Function ? never : K) | string, value: T[K] | any): Promise<SingleResultOrNull<T>> {
+    // Handle nested property paths (e.g., "user.email", "post.author.name")
+    if (typeof keySelector === 'string' && keySelector.includes('.')) {
+      return this.findByNestedProperty(keySelector, value);
+    }
+
+    // Handle simple property access
+    return this.repository.findOne({ 
+      where: { 
+        [keySelector]: value 
+      } as FindOptionsWhere<T>
+    });
+  }
+
+  private async findByNestedProperty(propertyPath: string, value: any): Promise<SingleResultOrNull<T>> {
+    const pathParts = propertyPath.split('.');
+    console.log(`pathParts: ${pathParts}`);
+    const alias = this.queryBuilder.alias;
+    console.log(`alias: ${alias}`);
+    
+    // Build joins for nested properties
+    let currentAlias = alias;
+    let currentMetadata = this.metadata;
+    console.log(`Starting with entity: ${currentMetadata.name}`);
+    console.log(`currentAlias: ${currentAlias}`);
+    
+    for (let i = 0; i < pathParts.length - 1; i++) {
+      console.log(`\n--- Processing path part ${i + 1}/${pathParts.length - 1} ---`);
+      const part = pathParts[i];
+      console.log(`part: ${part}`);
+      console.log(`Looking for relation '${part}' in entity '${currentMetadata.name}'`);
+      
+      const joinAlias = `${alias}_${pathParts.slice(0, i + 1).join('_')}`;
+      console.log(`joinAlias: ${joinAlias}`);
+      
+      // Check if this relation exists in the current entity's metadata
+      const relation = currentMetadata.relations.find(r => r.propertyName === part);
+      console.log(`Available relations in '${currentMetadata.name}':`, 
+        currentMetadata.relations.map(r => r.propertyName).join(', '));
+      console.log(`Found relation:`, relation ? `${relation.propertyName} -> ${relation.type}` : 'None');
+      
+      if (!relation) {
+        throw new Error(
+          `Relation '${part}' not found in entity '${currentMetadata.name}'. ` +
+          `Available relations: ${currentMetadata.relations.map(r => r.propertyName).join(', ')}`
+        );
+      }
+      
+      // Join the relation
+      this.queryBuilder.leftJoin(`${currentAlias}.${part}`, joinAlias);
+      currentAlias = joinAlias;
+      console.log(`Added join: ${currentAlias}.${part} AS ${joinAlias}`);
+      
+      // Update current metadata to the target entity of this relation
+      const targetEntity = relation.inverseEntityMetadata || relation.entityMetadata;
+      if (targetEntity) {
+        currentMetadata = targetEntity;
+        console.log(`Moving to target entity: ${currentMetadata.name}`);
+      } else {
+        console.warn(`Could not determine target entity for relation '${part}'. Continuing with current metadata.`);
+      }
+    }
+    
+    // Add condition for the final property
+    const finalProperty = pathParts[pathParts.length - 1];
+    console.log(`\n--- Final property ---`);
+    console.log(`finalProperty: ${finalProperty}`);
+    console.log(`Final entity: ${currentMetadata.name}`);
+    console.log(`Final alias: ${currentAlias}`);
+    
+    const condition = `${currentAlias}.${finalProperty} = :findByValue`;
+    console.log(`condition: ${condition}`);
+    this.queryBuilder.where(condition, { findByValue: value });
+    
+    return this.queryBuilder.getOne();
+  }
 
   //#region private methods
 
