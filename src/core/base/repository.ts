@@ -433,6 +433,8 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     return this.queryBuilder.getOne();
   }
 
+  //#endregion
+
   //#region private methods
 
   private parseJsonPredicate<T>(predicate: PredicateJSON<T>, alias: string): ExpressionParseResult {
@@ -547,7 +549,10 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
             console.log(`this.relationAliases: ${JSON.stringify(this.relationAliases, null, 2)}`);
             let relationAlias = this.relationAliases[fullPath];
             if (!relationAlias) {
-              throw new Error(`Relation not loaded: ${fullPath}`);
+              // Automatically create the join if it doesn't exist
+              console.log(`Creating automatic join for relation: ${fullPath}`);
+              relationAlias = this.createAutomaticJoin(fullPath, currentAlias);
+              this.relationAliases[fullPath] = relationAlias;
             }
             
             // Recurse into relation conditions
@@ -656,15 +661,17 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         const realValue = value as IncludeValue<U, keyof U>;
         const { as, include } = realValue;
         const relationAlias = as || `${parentAlias}_${key}`;
-        this.relationAliases[propertyPath] = { alias: as || key, path: propertyPath };
+        this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
         this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+        console.log(`[INCLUDE] Added join: ${column} AS ${relationAlias}, stored alias: ${relationAlias}`);
         if (include) {
           this.addInclude(include, relationAlias, propertyPath);
         }
       } else {
         const relationAlias = `${parentAlias}_${key}`;
-        this.relationAliases[propertyPath] = { alias: key, path: propertyPath };
+        this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
         this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+        console.log(`[INCLUDE] Added join: ${column} AS ${relationAlias}, stored alias: ${relationAlias}`);
       }
     });
   }
@@ -763,6 +770,66 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         this.filterSelectedRelationColumnsUndefined(rest as unknown as IncludeJSONWithColumns<T>);
       }
     });
+  }
+
+  /**
+   * Creates an automatic join for a relation path that wasn't explicitly included
+   */
+  private createAutomaticJoin(fullPath: string, currentAlias: string): { alias: string; path: string } {
+    const pathParts = fullPath.split('.');
+    
+    // Build the join path by traversing relations step by step
+    let joinAlias = currentAlias;
+    let traversalMetadata = this.metadata;
+    let builtPath = '';
+    
+    for (let i = 0; i < pathParts.length; i++) {
+      const part = pathParts[i];
+      builtPath = builtPath ? `${builtPath}.${part}` : part;
+      
+      // Check if this intermediate path already has an alias
+      if (this.relationAliases[builtPath]) {
+        joinAlias = this.relationAliases[builtPath].alias;
+        console.log(`[AUTO-JOIN] Using existing alias for ${builtPath}: ${joinAlias}`);
+        
+        // Update metadata for next iteration
+        const relation = traversalMetadata.relations.find(r => r.propertyName === part);
+        if (relation) {
+          const targetEntity = relation.inverseEntityMetadata || relation.entityMetadata;
+          if (targetEntity) {
+            traversalMetadata = targetEntity;
+          }
+        }
+        continue;
+      }
+      
+      // Find the relation in current metadata
+      const relation = traversalMetadata.relations.find(r => r.propertyName === part);
+      if (!relation) {
+        throw new Error(`Relation '${part}' not found in entity '${traversalMetadata.name}' for automatic join`);
+      }
+      
+      // Create join alias
+      const newJoinAlias = `${this.queryBuilder.alias}_${pathParts.slice(0, i + 1).join('_')}`;
+      
+      // Add the join to query builder
+      this.queryBuilder.leftJoin(`${joinAlias}.${part}`, newJoinAlias);
+      console.log(`[AUTO-JOIN] Added join: ${joinAlias}.${part} AS ${newJoinAlias}`);
+      
+      // Store this intermediate alias
+      this.relationAliases[builtPath] = { alias: newJoinAlias, path: builtPath };
+      
+      joinAlias = newJoinAlias;
+      
+      // Update metadata for next iteration
+      const targetEntity = relation.inverseEntityMetadata || relation.entityMetadata;
+      if (targetEntity) {
+        traversalMetadata = targetEntity;
+        console.log(`[AUTO-JOIN] Moving to target entity: ${traversalMetadata.name}`);
+      }
+    }
+    
+    return { alias: joinAlias, path: fullPath };
   }
 
   //#endregion
