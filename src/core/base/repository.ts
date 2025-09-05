@@ -634,6 +634,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
             set(this.selectedRelationColumns, relationKey, newAlias);
           } else {
             set(this.selectedColumns, key, { alias: (value as ScalarSelectorValue<U>).as });
+            console.log(`[ADD SELECT] selectedColumns: ${JSON.stringify(this.selectedColumns, null, 2)}`);
           }
         } else {
           const relationAlias = this.relationAliases[relationPath];
@@ -672,6 +673,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         }
       } else if (value === true && !relationKey) {
         set(this.selectedColumns, key, true);
+        console.log(`[ADD SELECT] selectedColumns: ${JSON.stringify(this.selectedColumns, null, 2)}`);
       } else if (value === true && relationKey) {
         const relationAlias = get(this.selectedRelationColumns, relationKey);
         set(this.selectedRelationColumns, relationKey, {
