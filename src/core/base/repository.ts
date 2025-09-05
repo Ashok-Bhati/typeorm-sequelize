@@ -37,6 +37,18 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
     this.metadata = this.repository.metadata;
   }
 
+  /**
+   * Creates a fresh QueryBuilder and resets all state for a new query
+   */
+  private resetQueryBuilder(): void {
+    console.log(`[RESET] Creating fresh QueryBuilder, clearing previous state`);
+    this.queryBuilder = this.repository.createQueryBuilder(this.metadata.tableName || this.metadata.name.toLowerCase());
+    Object.keys(this.relationAliases).forEach(key => delete this.relationAliases[key]);
+    this.selectedRelationColumns = {};
+    this.selectedColumns = {};
+    console.log(`[RESET] QueryBuilder reset complete`);
+  }
+
   //#region Repository Methods
 
   async create(entity: DeepPartial<T>): Promise<T> {
@@ -165,38 +177,51 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
 
   async first(): Promise<SingleResult<T>> {
     const result = await this.queryBuilder.limit(1).getOne();
-    if (!result) {
+    const filteredResult = result ? this.filterSelectedColumns(result) : null;
+    this.resetQueryBuilder(); // Reset for next query
+    if (!filteredResult) {
       throw new Error('No entity found');
     }
-    return result;
+    return filteredResult;
   }
 
   async firstOrDefault(): Promise<SingleResultOrNull<T>> {
-    return await this.queryBuilder.limit(1).getOne();
+    const result = await this.queryBuilder.limit(1).getOne();
+    const filteredResult = result ? this.filterSelectedColumns(result) : null;
+    this.resetQueryBuilder(); // Reset for next query
+    return filteredResult;
   }
 
   async single(): Promise<SingleResult<T>> {
     const results = await this.queryBuilder.limit(2).getMany();
-    if (results.length === 0) {
+    const filteredResults = results.map((item) => this.filterSelectedColumns(item));
+    this.resetQueryBuilder(); // Reset for next query
+    if (filteredResults.length === 0) {
       throw new Error('No entity found');
     }
-    if (results.length > 1) {
+    if (filteredResults.length > 1) {
       throw new Error('Multiple entities found');
     }
-    return results[0];
+    return filteredResults[0];
   }
 
   async singleOrDefault(): Promise<SingleResultOrNull<T>> {
     const results = await this.queryBuilder.limit(2).getMany();
-    if (results.length > 1) {
+    const filteredResults = results.map((item) => this.filterSelectedColumns(item));
+    this.resetQueryBuilder(); // Reset for next query
+    if (filteredResults.length > 1) {
       throw new Error('Multiple entities found');
     }
-    return results[0] || null;
+    return filteredResults[0] ? filteredResults[0] : null;
   }
 
   where(predicate: PredicateJSON<T>): IQueryableWhereResult<T> {
+    console.log(`[WHERE] Called with predicate:`, JSON.stringify(predicate, null, 2));
     const alias = this.queryBuilder.alias;
     const { whereClause, params } = this.parseJsonPredicate(predicate, alias);
+    
+    console.log(`[WHERE] Generated whereClause: ${whereClause}`);
+    console.log(`[WHERE] Generated params:`, params);
     
     this.queryBuilder.where(whereClause, params);
     return this as unknown as IQueryableWhereResult<T>;
@@ -220,16 +245,22 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
 
   async toList(): Promise<ListResult<T>> {
     const data = await this.queryBuilder.getMany();
-    return data.map((item) => this.filterSelectedColumns(item));
+    const filteredData = data.map((item) => this.filterSelectedColumns(item));
+    this.resetQueryBuilder(); // Reset for next query
+    return filteredData;
   }
 
   async withCount(): Promise<[number, ListResult<T>]> {
     const [results, count] = await this.queryBuilder.getManyAndCount();
-    return [count, results];
+    const filteredResults = results.map((item) => this.filterSelectedColumns(item));
+    this.resetQueryBuilder(); // Reset for next query
+    return [count, filteredResults];
   }
 
   async any(): Promise<boolean> {
-    return await this.queryBuilder.getExists();
+    const result = await this.queryBuilder.getExists();
+    this.resetQueryBuilder(); // Reset for next query
+    return result;
   }
 
   //#endregion
@@ -252,6 +283,7 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
   //#region Loading Related Data
 
   include(keySelector: IncludeJSON<T>): IQueryableRelationResult<T> {
+    this.resetQueryBuilder();
     const alias = this.queryBuilder.alias;
     this.addInclude(keySelector, alias);
     return this as unknown as IQueryableRelationResult<T>;
@@ -547,12 +579,19 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
             
             // Get or create relation alias
             console.log(`this.relationAliases: ${JSON.stringify(this.relationAliases, null, 2)}`);
+            
+            // Debug: Log existing joins in TypeORM
+            const expressionMap = (this.queryBuilder as any).expressionMap;
+            console.log(`[DEBUG] TypeORM existing joins:`, expressionMap?.joinAttributes?.map((j: any) => ({ alias: j.alias?.name, relation: j.relationName, parent: j.parentAlias })));
+            
             let relationAlias = this.relationAliases[fullPath];
             if (!relationAlias) {
               // Automatically create the join if it doesn't exist
               console.log(`Creating automatic join for relation: ${fullPath}`);
               relationAlias = this.createAutomaticJoin(fullPath, currentAlias);
-              this.relationAliases[fullPath] = relationAlias;
+              // Note: createAutomaticJoin now handles storing the alias internally
+            } else {
+              console.log(`[WHERE] Reusing existing relation alias for ${fullPath}: ${relationAlias.alias}`);
             }
             
             // Recurse into relation conditions
@@ -661,23 +700,46 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
         const realValue = value as IncludeValue<U, keyof U>;
         const { as, include } = realValue;
         const relationAlias = as || `${parentAlias}_${key}`;
+        
+        // Check if this join already exists before creating it
+        const existingJoins = (this.queryBuilder as any).expressionMap?.joinAttributes || [];
+        const joinExists = existingJoins.some((join: any) => join.alias?.name === relationAlias);
+        
+        if (joinExists) {
+          console.log(`[INCLUDE] Join with alias ${relationAlias} already exists, skipping leftJoinAndSelect creation`);
+        } else {
+          this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+          console.log(`[INCLUDE] Added join: ${column} AS ${relationAlias}, stored alias: ${relationAlias}`);
+        }
+        
         this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
-        this.queryBuilder.leftJoinAndSelect(column, relationAlias);
-        console.log(`[INCLUDE] Added join: ${column} AS ${relationAlias}, stored alias: ${relationAlias}`);
+        console.log(`[INCLUDE] Current relationAliases:`, JSON.stringify(this.relationAliases, null, 2));
         if (include) {
           this.addInclude(include, relationAlias, propertyPath);
         }
       } else {
         const relationAlias = `${parentAlias}_${key}`;
+        
+        // Check if this join already exists before creating it
+        const existingJoins = (this.queryBuilder as any).expressionMap?.joinAttributes || [];
+        const joinExists = existingJoins.some((join: any) => join.alias?.name === relationAlias);
+        
+        if (joinExists) {
+          console.log(`[INCLUDE] Join with alias ${relationAlias} already exists, skipping leftJoinAndSelect creation`);
+        } else {
+          this.queryBuilder.leftJoinAndSelect(column, relationAlias);
+          console.log(`[INCLUDE] Added join: ${column} AS ${relationAlias}, stored alias: ${relationAlias}`);
+        }
+        
         this.relationAliases[propertyPath] = { alias: relationAlias, path: propertyPath };
-        this.queryBuilder.leftJoinAndSelect(column, relationAlias);
-        console.log(`[INCLUDE] Added join: ${column} AS ${relationAlias}, stored alias: ${relationAlias}`);
+        console.log(`[INCLUDE] Current relationAliases:`, JSON.stringify(this.relationAliases, null, 2));
       }
     });
   }
 
   private filterSelectedColumns(data: T): T {
-    const result: Record<string, any> = {};
+    let result: Record<string, any> = {};
+    console.log(`[FILTER] selectedColumns: ${JSON.stringify(this.selectedColumns, null, 2)}`);
     for (const key in this.selectedColumns) {
       const realValue = this.selectedColumns[key];
       if (typeof realValue === 'boolean') {
@@ -685,6 +747,9 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
       } else {
         result[realValue.alias] = get(data, key);
       }
+    }
+    if(Object.keys(this.selectedColumns).length === 0){
+      result = data;
     }
     this.mapRelationColumns(data, this.selectedRelationColumns, result);
     return result as T;
@@ -776,60 +841,62 @@ export abstract class BaseRepository<T extends ObjectLiteral = ObjectLiteral>
    * Creates an automatic join for a relation path that wasn't explicitly included
    */
   private createAutomaticJoin(fullPath: string, currentAlias: string): { alias: string; path: string } {
-    const pathParts = fullPath.split('.');
+    console.log(`[AUTO-JOIN] Starting createAutomaticJoin for ${fullPath} from ${currentAlias}`);
     
-    // Build the join path by traversing relations step by step
-    let joinAlias = currentAlias;
-    let traversalMetadata = this.metadata;
+    // First, check if this exact path already exists
+    if (this.relationAliases[fullPath]) {
+      console.log(`[AUTO-JOIN] Path ${fullPath} already exists, returning: ${this.relationAliases[fullPath].alias}`);
+      return this.relationAliases[fullPath];
+    }
+    
+    // Split the path into parts
+    const pathParts = fullPath.split('.');
+    console.log(`[AUTO-JOIN] Path parts: ${pathParts.join(' -> ')}`);
+    
+    // Start from current alias and build path step by step
+    let currentJoinAlias = currentAlias;
     let builtPath = '';
     
     for (let i = 0; i < pathParts.length; i++) {
       const part = pathParts[i];
       builtPath = builtPath ? `${builtPath}.${part}` : part;
       
-      // Check if this intermediate path already has an alias
+      console.log(`[AUTO-JOIN] Processing part ${i + 1}/${pathParts.length}: ${part} (builtPath: ${builtPath})`);
+      
+      // Check if this intermediate path already exists
       if (this.relationAliases[builtPath]) {
-        joinAlias = this.relationAliases[builtPath].alias;
-        console.log(`[AUTO-JOIN] Using existing alias for ${builtPath}: ${joinAlias}`);
-        
-        // Update metadata for next iteration
-        const relation = traversalMetadata.relations.find(r => r.propertyName === part);
-        if (relation) {
-          const targetEntity = relation.inverseEntityMetadata || relation.entityMetadata;
-          if (targetEntity) {
-            traversalMetadata = targetEntity;
-          }
-        }
+        currentJoinAlias = this.relationAliases[builtPath].alias;
+        console.log(`[AUTO-JOIN] Found existing intermediate path ${builtPath} with alias ${currentJoinAlias}`);
         continue;
       }
       
-      // Find the relation in current metadata
-      const relation = traversalMetadata.relations.find(r => r.propertyName === part);
-      if (!relation) {
-        throw new Error(`Relation '${part}' not found in entity '${traversalMetadata.name}' for automatic join`);
+      // Need to create this join
+      const targetAlias = `${this.queryBuilder.alias}_${pathParts.slice(0, i + 1).join('_')}`;
+      console.log(`[AUTO-JOIN] Creating join: ${currentJoinAlias}.${part} AS ${targetAlias}`);
+      
+      // Check if a join with this alias already exists before creating
+      const existingJoins = (this.queryBuilder as any).expressionMap?.joinAttributes || [];
+      const joinExists = existingJoins.some((join: any) => join.alias?.name === targetAlias);
+      
+      if (joinExists) {
+        console.log(`[AUTO-JOIN] Join with alias ${targetAlias} already exists, skipping leftJoin creation`);
+      } else {
+        // Create the join
+        this.queryBuilder.leftJoin(`${currentJoinAlias}.${part}`, targetAlias);
+        console.log(`[AUTO-JOIN] Created leftJoin: ${currentJoinAlias}.${part} AS ${targetAlias}`);
       }
       
-      // Create join alias
-      const newJoinAlias = `${this.queryBuilder.alias}_${pathParts.slice(0, i + 1).join('_')}`;
+      // Store the alias mapping
+      this.relationAliases[builtPath] = { alias: targetAlias, path: builtPath };
+      console.log(`[AUTO-JOIN] Stored mapping: ${builtPath} -> ${targetAlias}`);
       
-      // Add the join to query builder
-      this.queryBuilder.leftJoin(`${joinAlias}.${part}`, newJoinAlias);
-      console.log(`[AUTO-JOIN] Added join: ${joinAlias}.${part} AS ${newJoinAlias}`);
-      
-      // Store this intermediate alias
-      this.relationAliases[builtPath] = { alias: newJoinAlias, path: builtPath };
-      
-      joinAlias = newJoinAlias;
-      
-      // Update metadata for next iteration
-      const targetEntity = relation.inverseEntityMetadata || relation.entityMetadata;
-      if (targetEntity) {
-        traversalMetadata = targetEntity;
-        console.log(`[AUTO-JOIN] Moving to target entity: ${traversalMetadata.name}`);
-      }
+      // Move to next level
+      currentJoinAlias = targetAlias;
     }
     
-    return { alias: joinAlias, path: fullPath };
+    const result = { alias: currentJoinAlias, path: fullPath };
+    console.log(`[AUTO-JOIN] Completed ${fullPath}, final alias: ${result.alias}`);
+    return result;
   }
 
   //#endregion
